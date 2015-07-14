@@ -32,7 +32,7 @@ def sort_nicely(l):
     """
     l.sort(key=alphanum_key)
 
-def calc_one_step(out_file_name, file_list, out_path, current_step, restart, cycles, ts):
+def calc_one_step(out_file_name, file_list, out_path, current_step, restart, cycles, ts, remove_files):
   x_coords = []
   y_coords = []
   z_coords = []  
@@ -169,6 +169,7 @@ def calc_one_step(out_file_name, file_list, out_path, current_step, restart, cyc
                     sp, sx, sy, sz)) 
                     
   print("step {0} complete".format(current_step))
+  remove_files(file_list, remove_files)
   #output.put((current_step, "step {0} complete".format(current_step)))
   
       
@@ -176,9 +177,8 @@ def calc_one_step(out_file_name, file_list, out_path, current_step, restart, cyc
 def remove_files(file_list, remove_files=False):
   if (remove_files == True):
     print('removing files')
-    for f_idx, file_n in enumerate(file_list):
-      #print(file_n)
-      file_path = os.path.join(path, file_n)
+    for f_idx, file_path in enumerate(file_list):
+      #print(os.path.split(file_path)[-1])
       try:
         os.remove(file_path)
       except Exception, err:
@@ -193,7 +193,7 @@ def run_script():
   out_path = "/raid/home/ksansom/caseFiles/ultrasound/fistula/fluent/fluent_post_proc"
   search_name = "fistula_fluent_ascii-*"
   out_file_name = "fistula"
-  
+  remove_files = False
   
   if not os.path.exists(out_path):
     print("creating path directory")
@@ -238,7 +238,7 @@ def run_script():
     
     if (dry_run == False):
       processes.apply_async(calc_one_step,
-        args=(out_file_name, file_list, out_path, i, restart, cycles, ts))
+        args=(out_file_name, file_list, out_path, i, restart, cycles, ts, remove_files))
       #calc_one_step(output, file_list, out_path, i, restart, cycles, ts)
       
     else:
