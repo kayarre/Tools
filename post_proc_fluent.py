@@ -32,7 +32,7 @@ def sort_nicely(l):
     """
     l.sort(key=alphanum_key)
 
-def calc_one_step(file_list, out_path, current_step, restart, cycles, ts):
+def calc_one_step(out_file_name, file_list, out_path, current_step, restart, cycles, ts):
   x_coords = []
   y_coords = []
   z_coords = []  
@@ -141,7 +141,8 @@ def calc_one_step(file_list, out_path, current_step, restart, cycles, ts):
 
   if (current_step == 0):
     print("write coordinate file")
-    with open(os.path.join(out_path, 'coordinates.txt'), 'w') as coord_f:
+    coord_file_name = '{0}_coordinates.txt'.format(out_file_name)
+    with open(os.path.join(out_path, coord_file_name), 'w') as coord_f:
       coord_f.write(" ".join(f_vars[0:4]))
       coord_f.write("\n")
       for n, x, y, z in zip(nodes, x_coords, y_coords, z_coords):
@@ -149,7 +150,7 @@ def calc_one_step(file_list, out_path, current_step, restart, cycles, ts):
           "{0:10n} {1:16.9E} {2:16.9E} {3:16.9E}\n".format(
           n, x, y, z))
 
-  time_file_name = "carotid_sol_{0:.4f}.txt".format(float(current_step)*ts)
+  time_file_name = "{0}_sol_{1:.4f}.txt".format(out_file_name, float(current_step)*ts)
   with open(os.path.join(out_path, time_file_name), 'w') as params_f:
     print("write parameter file")
     params_f.write(f_vars[0] + " ")
@@ -191,7 +192,7 @@ def run_script():
   dir_path = "/raid/home/ksansom/caseFiles/ultrasound/fistula/fluent"
   out_path = "/raid/home/ksansom/caseFiles/ultrasound/fistula/fluent/fluent_post_proc"
   search_name = "fistula_fluent_ascii-*"
-  
+  out_file_name = "fistula"
   
   
   if not os.path.exists(out_path):
@@ -237,7 +238,7 @@ def run_script():
     
     if (dry_run == False):
       processes.apply_async(calc_one_step,
-        args=(file_list, out_path, i, restart, cycles, ts))
+        args=(out_file_name, file_list, out_path, i, restart, cycles, ts))
       #calc_one_step(output, file_list, out_path, i, restart, cycles, ts)
       
     else:
@@ -250,8 +251,8 @@ def run_script():
   processes.join()
   
   # Get process results from the output queue
-  results = [output.get() for p in processes]
-  print(results)
+  #results = [output.get() for p in processes]
+  #print(results)
     
 if ( __name__ == '__main__' ):
     run_script()
