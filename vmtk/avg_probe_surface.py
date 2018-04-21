@@ -34,6 +34,7 @@ def Execute(args):
         
 
     ln_avg = np.average(lines, axis=1)
+    ln_std = np.std(lines, axis=1, ddof=1)
 
     ln_avg_norm = ln_avg / ln_avg.max()
     
@@ -50,18 +51,23 @@ def Execute(args):
 
     array = vtk.vtkDoubleArray()
     array.SetNumberOfComponents(n_pts)
-    array.SetName("raw")
+    array.SetName("rawImageSamples")
     array.SetNumberOfTuples(n_cells)
 
     avg = vtk.vtkDoubleArray()
     avg.SetNumberOfComponents(1)
-    avg.SetName("avg")
+    avg.SetName("avgSample")
     avg.SetNumberOfTuples(n_cells)
 
     avg_norm = vtk.vtkDoubleArray()
     avg_norm.SetNumberOfComponents(1)
     avg_norm.SetName("normalized")
     avg_norm.SetNumberOfTuples(n_cells)
+    
+    stddev = vtk.vtkDoubleArray()
+    stddev.SetNumberOfComponents(1)
+    stddev.SetName("stddev")
+    stddev.SetNumberOfTuples(n_cells)
 
     for i in range(n_cells):
         surf_id = pointLocator.FindClosestPoint(pts[i])
@@ -69,11 +75,13 @@ def Execute(args):
         avg.SetValue(surf_id, ln_avg[i])
         array.SetTuple(surf_id, list(lines[i,:]))
         avg_norm.SetValue(surf_id, ln_avg_norm[i])
+        stddev.SetValue(surf_id, ln_std[i])
     
 
     Surface.GetPointData().AddArray(avg)
     Surface.GetPointData().AddArray(array)
     Surface.GetPointData().AddArray(avg_norm)
+    Surface.GetPointData().AddArray(stddev)
     
 
     writer = vmtkscripts.vmtkSurfaceWriter()
@@ -83,7 +91,7 @@ def Execute(args):
 
 
 if __name__=='__main__':
-    parser = argparse.ArgumentParser(description='estimate vertices  for uniform point distribution')
+    parser = argparse.ArgumentParser(description='average probed information along lines')
     parser.add_argument("-i", dest="surface_file", required=True, help="input surface file", metavar="FILE")
     parser.add_argument("-l", dest="lines_file", required=True, help="input file with probed lines", metavar="FILE")
     parser.add_argument("-o", dest="file_out", required=True, help="output file with averages probed lines", metavar="FILE")

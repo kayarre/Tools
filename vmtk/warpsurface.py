@@ -8,7 +8,7 @@ import argparse
 import copy
 
 # creates lines normal to surface for evaluation in the probe image with surface
-def Execute(args):
+def warp_surface(args):
     print("get lines along normal of surface")
     
     reader = vmtkscripts.vmtkSurfaceReader()
@@ -35,6 +35,7 @@ def Execute(args):
         normals = get_normals.GetOutput()
 
     dx=args.slice_thickness
+    print(dx)
     n_pts = normals.GetNumberOfPoints()
     # Create a vtkCellArray container and store the lines in it
     lines = vtk.vtkCellArray()
@@ -84,7 +85,7 @@ if __name__=='__main__':
     parser.add_argument("-l", '--sublayers', dest="sublayers",  type=int, help='number of sublayers for lines', default=2)
     args = parser.parse_args()
     #print(args)
-    Execute(args)
+    warp_surface(args)
 
 
     #surface_out = vtk.vtkPolyData()
