@@ -36,7 +36,8 @@ def Execute(args):
     ln_avg = np.average(lines, axis=1)
     ln_std = np.std(lines, axis=1, ddof=1)
 
-    ln_avg_norm = ln_avg / ln_avg.max()
+    avg_min = ln_avg.min()
+    ln_avg_norm = (ln_avg + avg_min) / (ln_avg.max() + avg_min)
     
     
     reader_surface = vmtkscripts.vmtkSurfaceReader()
