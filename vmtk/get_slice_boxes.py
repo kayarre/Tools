@@ -185,7 +185,7 @@ if __name__=='__main__':
                         help="output filename for clipped surfaces", metavar="FILE",
                         default = "case_dome_normals_probe_clip")
     parser.add_argument("-t", '--thickness', dest="slice_thickness",  type=float, help='slice thickness of surface ', default=0.5625)
-    parser.add_argument("--centroid", dest="centroid", required=True, help="string of comma space seperated numbers to define neck centroid", metavar="FILE")
+    parser.add_argument("--centroid", dest="centroid", required=True, help="string of comma space seperated numbers to define neck centroid", metavar="str")
     args = parser.parse_args()
     #print(args)
     Execute(args)
