@@ -74,11 +74,12 @@ def post_proc_cfd(dir_path, vtu_input, cell_type="point",
         calc2.SetAttributeModeToUsePointData()
     calc2.SetResultArrayType(vtk.VTK_DOUBLE)
 
-
+    # initialize the output to include the peak values
     grid = vtk.vtkUnstructuredGrid()
     #N_peak = 3
     reader.SetTimeStep(N_peak)
     print("loading {0}th timestep to copy data".format(N_peak))
+    calc1.Update()
     calc2.Update()
     grid.DeepCopy(calc2.GetOutput())
     #grid.SetNumberOfTimeSteps(1)
@@ -94,71 +95,70 @@ def post_proc_cfd(dir_path, vtu_input, cell_type="point",
         for i in range(sz_array):
             out_array.SetValue(i, out_array.GetValue(i) + in_array.GetValue(i))
 
+    def array_division(out_array, in_array, sz_array):
+        for i in range(sz_array):
+            out_array.SetValue(i, out_array.GetValue(i) / in_array.GetValue(i))
+
+    def array_avg(out_array, N):
+        float_N = float(N)
+        for i in range(N):
+            out_array.SetValue(i, out_array.GetValue(i) / float_N)
+
     reader.SetTimeStep(0)
 
 
     print("loading {0}th timestep for averaging initialization".format(0))
     reader.Update()
+    calc1.Update()
     calc2.Update()
 
     if(cell_type == "cell"):
         calc_data = calc2.GetOutput().GetCellData()
         grid_data = grid.GetCellData()
+        n_sz = grid.GetNumberOfCells()
     else:
         calc_data = calc2.GetOutput().GetPointData()
         grid_data = grid.GetPointData()
+        n_sz = grid.GetNumberOfPoints()
 
     TAWSS = vtk.vtkDoubleArray()
-    test = calc_data.GetArray("WSS")
     TAWSS.DeepCopy(calc_data.GetArray("WSS"))
     TAWSS.SetName("TAWSS")
-    grid_data.AddArray(TAWSS)
 
     TAWSSG = vtk.vtkDoubleArray()
     TAWSSG.DeepCopy(calc_data.GetArray("WSSG"))
     TAWSSG.SetName("TAWSSG")
-    grid_data.AddArray(TAWSSG)
 
     x_shear_avg = vtk.vtkDoubleArray()
     x_shear_avg.DeepCopy(calc_data.GetArray("x_wall_shear"))
     x_shear_avg.SetName("x_shear_avg")
-    grid_data.AddArray(x_shear_avg)
 
     y_shear_avg = vtk.vtkDoubleArray()
     y_shear_avg.DeepCopy(calc_data.GetArray("y_wall_shear"))
     y_shear_avg.SetName("y_shear_avg")
-    grid_data.AddArray(y_shear_avg)
 
     z_shear_avg = vtk.vtkDoubleArray()
     z_shear_avg.DeepCopy(calc_data.GetArray("z_wall_shear"))
     z_shear_avg.SetName("z_shear_avg")
-    grid_data.AddArray(z_shear_avg)
 
     #TAWSSVector = vtk.vtkDoubleArray()
     #TAWSSVector.DeepCopy(calc_data.GetArray("z_wall_shear"))
     #TAWSSVector.SetName("TAWSSVector")
     #grid_data.AddArray(TAWSSVector)
 
-
-
-    def get_array_names(input):
-        N_point_array = input.GetOutput().GetPointData().GetNumberOfArrays()
-        N_WSS = 9999999
-        for i in range(N_point_array):
-            name_WSS = input.GetOutput().GetPointData().GetArrayName(i)
-            if (name_WSS == "WSS"):
-                N_WSS = i
-            print(name_WSS)
+    # def get_array_names(input):
+    #     N_point_array = input.GetOutput().GetPointData().GetNumberOfArrays()
+    #     N_WSS = 9999999
+    #     for i in range(N_point_array):
+    #         name_WSS = input.GetOutput().GetPointData().GetArrayName(i)
+    #         if (name_WSS == "WSS"):
+    #             N_WSS = i
+    #         print(name_WSS)
     #
     # def array_sum(output, input_calc, N):
     #     for i in range(N):
     #         calc = output.GetValue(i) + input_calc.GetValue(i)
     #         output.SetValue(i, calc)
-
-    def array_avg(out_array, N):
-        float_N = float(N)
-        for i in range(N):
-            out_array.SetValue(i, out_array.GetValue(i) / float_N)
 
     writer = vtk.vtkXMLUnstructuredGridWriter()
     #writer.SetFileName(os.path.join(out_dir,'test_outfile.vtu'))
@@ -170,48 +170,53 @@ def post_proc_cfd(dir_path, vtu_input, cell_type="point",
     #avg_map = {"TAWSS":"WSS", "TAWSSG": "WSSG", "x_shear_avg":"x_wall_shear",
     #            "y_shear_avg":"y_wall_shear" , "z_shear_avg":"z_wall_shear"}
 
-    for i in range(N):
+    for i in range(1,N):
         reader.SetTimeStep(i)
         print("Time step {0} for average calc".format(i))
         reader.Update()
+        calc1.Update()
         calc2.Update()
 
         if(cell_type == "cell"):
             calc_data = calc2.GetOutput().GetCellData()
-            grid_data = grid.GetCellData()
-            n_sz = grid.GetNumberOfCells()
         else:
             calc_data = calc2.GetOutput().GetPointData()
-            grid_data = grid.GetPointData()
-            n_sz = grid.GetNumberOfPoints()
 
         #get_array_names(calc2)
-        if( i > 0):
-            array_sum(grid_data.GetArray("TAWSS"),
-                      calc_data.GetArray("WSS"),
-                      n_sz)
-            array_sum(grid_data.GetArray("TAWSSG"),
-                      calc_data.GetArray("WSSG"),
-                      n_sz)
-            array_sum(grid_data.GetArray("x_shear_avg"),
-                      calc_data.GetArray("x_wall_shear"),
-                      n_sz)
-            array_sum(grid_data.GetArray("y_shear_avg"),
-                      calc_data.GetArray("y_wall_shear"),
-                      n_sz)
-            array_sum(grid_data.GetArray("z_shear_avg"),
-                      calc_data.GetArray("z_wall_shear"),
-                      n_sz)
+        array_sum(TAWSS, calc_data.GetArray("WSS"), n_sz)
+        array_sum(TAWSSG, calc_data.GetArray("WSSG"), n_sz)
+        array_sum(x_shear_avg, calc_data.GetArray("x_wall_shear"), n_sz)
+        array_sum(y_shear_avg, calc_data.GetArray("y_wall_shear"), n_sz)
+        array_sum(z_shear_avg, calc_data.GetArray("z_wall_shear"), n_sz)
 
         writer.WriteNextTime(reader.GetTimeStep())
 
-    array_avg(grid_data.GetArray("TAWSS"), N)
-    array_avg(grid_data.GetArray("TAWSSG"), N)
-    array_avg(grid_data.GetArray("x_shear_avg"), N)
-    array_avg(grid_data.GetArray("y_shear_avg"), N)
-    array_avg(grid_data.GetArray("z_shear_avg"), N)
-
     writer.Stop()
+
+    array_avg(TAWSS, N)
+    array_avg(TAWSSG, N)
+    array_avg(x_shear_avg, N)
+    array_avg(y_shear_avg, N)
+    array_avg(z_shear_avg, N)
+
+    WSS_peak2mean = vtk.vtkDoubleArray()
+    WSS_peak2mean.DeepCopy(grid_data.GetArray("WSS"))
+    WSS_peak2mean.SetName("WSS_peak2mean")
+    array_division(WSS_peak2mean, TAWSS, n_sz)
+
+    WSSG_peak2mean = vtk.vtkDoubleArray()
+    WSSG_peak2mean.DeepCopy(grid_data.GetArray("WSSG"))
+    WSSG_peak2mean.SetName("WSSG_peak2mean")
+    array_division(WSSG_peak2mean, TAWSSG, n_sz)
+
+    grid_data.AddArray(TAWSS)
+    grid_data.AddArray(TAWSSG)
+    grid_data.AddArray(x_shear_avg)
+    grid_data.AddArray(y_shear_avg)
+    grid_data.AddArray(z_shear_avg)
+    grid_data.AddArray(WSS_peak2mean)
+    grid_data.AddArray(WSSG_peak2mean)
+
     print("got here")
     calc3 = vtk.vtkArrayCalculator()
     calc3.AddScalarVariable("x_shear_avg", "x_shear_avg",0)
@@ -248,7 +253,9 @@ def post_proc_cfd(dir_path, vtu_input, cell_type="point",
     pass_filt.AddArray(vtk_data_type, "TAWSS")
     pass_filt.AddArray(vtk_data_type, "TAWSSG")
     pass_filt.AddArray(vtk_data_type, "OSI")
-    pass_filt.AddArray(vtk_data_type, "velocity")
+    pass_filt.AddArray(vtk_data_type, "WSS_peak2mean")
+    pass_filt.AddArray(vtk_data_type, "WSSG_peak2mean")
+
     pass_filt.Update()
     #if(cell_type == "cell"):
     #    print(pass_filt.GetOutput().GetCellData().GetArray("OSI").GetValue(0))
