@@ -24,7 +24,7 @@ def post_proc_cfd(dir_path, vtu_input, cell_type="point",
     #wallshear = grid.GetCellData().GetArray("x_wall_shear")
     #print(wallshear)
     calc1 = vtk.vtkArrayCalculator()
-    calc1.SetFunction("sqrt(x_wall_shear^2+y_wall_shear^2+y_wall_shear^2)")
+    calc1.SetFunction("sqrt(x_wall_shear^2+y_wall_shear^2+z_wall_shear^2)")
     calc1.AddScalarVariable("x_wall_shear", "x_wall_shear",0)
     calc1.AddScalarVariable("y_wall_shear", "y_wall_shear",0)
     calc1.AddScalarVariable("z_wall_shear", "z_wall_shear",0)
@@ -59,7 +59,7 @@ def post_proc_cfd(dir_path, vtu_input, cell_type="point",
     z_WSS_grad.ComputeGradientOn()
     z_WSS_grad.FasterApproximationOff()
     z_WSS_grad.SetResultArrayName("z_WSS_grad")
-    z_WSS_grad.SetInputArrayToProcess(0, 0, 0, vtk_process, "y_wall_shear")
+    z_WSS_grad.SetInputArrayToProcess(0, 0, 0, vtk_process, "z_wall_shear")
 
     calc2 = vtk.vtkArrayCalculator()
     calc2.AddScalarVariable("x_component", "x_WSS_grad",0)
