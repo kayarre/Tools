@@ -41,6 +41,9 @@ def run_script(args):
     dist.Execute()
     
 
+    clip_copy = vtk.vtkPolyData()
+    clip_copy.DeepCopy(dist.Surface)
+    
     clip = vmtkscripts.vmtkSurfaceClipper()
     clip.Surface = dist.Surface
     clip.Interactive = 0
@@ -64,6 +67,26 @@ def run_script(args):
     writer.OutputFileName = args.file_out
     writer.Input = normals.Surface
     writer.Execute()
+    
+    if (args.inverse_out):
+        clip_inverse = vmtkscripts.vmtkSurfaceClipper()
+        clip_inverse.Surface = clip_copy
+        clip_inverse.Interactive = 0
+        clip_inverse.InsideOut = 0
+        clip_inverse.ClipArrayName = "distance"
+        clip_inverse.ClipValue = 0.1
+        clip_inverse.Execute()
+        
+        conn2 = vmtkscripts.vmtkSurfaceConnectivity()
+        conn2.Surface = clip_inverse.Surface
+        conn2.Method ="all"
+        conn2.CleanOutput = 0
+        conn2.Execute()
+
+        writer2 = vmtkscripts.vmtkSurfaceWriter()
+        writer2.OutputFileName = args.inverse_out
+        writer2.Input = conn2.Surface
+        writer2.Execute()
 
 
 if __name__=='__main__':
@@ -72,6 +95,7 @@ if __name__=='__main__':
     parser.add_argument("-d", dest="surface_file", required=True, help="input dome surface", metavar="FILE")
 
     parser.add_argument("-o", dest="file_out", required=True, help="output file clipped surface", metavar="FILE")
+    parser.add_argument("--inverse", dest="inverse_out", required=False, help="output file of inverse clipped surface", metavar="FILE")
     args = parser.parse_args()
     #print(args)
     run_script(args)

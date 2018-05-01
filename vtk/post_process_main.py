@@ -5,7 +5,10 @@ from ensight2vtk_single_encas import ensight2vtk
 from post_proc_cfd import post_proc_cfd
 
 def run_script():
-    case_list = ["case1", "case3", "case4", "case5", "case7"]
+    #case_list = ["case1", "case3", "case4", "case5", "case7"]
+    #case_list = ["case1", "case8", "case12"]
+    #case_list = ["case13"]
+    case_list = ["case1", "case3", "case4", "case5", "case7", "case8", "case12", "case13", "case14"]
     dir_path = "/raid/sansomk/caseFiles/mri/VWI_proj/"
 
     ensight_dir = "ensight"
@@ -34,11 +37,11 @@ def run_script():
                     wall, surface, interior)
 
         post_proc_cfd(out_dir, vtk_file_1,"point",
-                      "calc_test_node.vtu", "calc_test_node_stats.vtu", N_peak=10)
+                      "calc_test_node.vtu", "calc_test_node_stats.vtu", N_peak=9)
 
 def rerun_cfd_analysis():
-    case_list = ["case1"]
-    #case_list = ["case1", "case3", "case4", "case5", "case7"]
+    #case_list = ["case1"]
+    case_list = case_list = ["case1", "case3", "case4", "case5", "case7", "case8", "case12", "case13", "case14"]
     dir_path = "/raid/sansomk/caseFiles/mri/VWI_proj/"
 
     fluent_dir = "fluent_dsa"
@@ -55,7 +58,7 @@ def rerun_cfd_analysis():
         head_dir = os.path.join(dir_path, case, fluent_dir)
         out_dir = os.path.join(head_dir, vtk_out)
         post_proc_cfd(out_dir, vtk_file_1,"point",
-                      "calc_test_node.vtu", "calc_test_node_stats.vtu")
+                      "calc_test_node.vtu", "calc_test_node_stats.vtu", N_peak=9)
 
 def run_convert_ensight():
     #case_list = ["case1", "case3", "case4", "case5", "case7"]
@@ -91,6 +94,6 @@ def run_convert_ensight():
 
 
 if ( __name__ == '__main__' ):
-    run_script()
+    #run_script()
     #run_convert_ensight()
-    #rerun_cfd_analysis()
+    rerun_cfd_analysis()

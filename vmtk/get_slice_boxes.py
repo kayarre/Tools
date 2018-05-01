@@ -160,18 +160,19 @@ def Execute(args):
             writer.Input = geom.GetOutput()
             writer.Execute()
             
-            #test = vtk.vtkCubeSource()
-            #test.SetBounds (dims_min[0], dims_max[0], dims_min[1], dims_max[1], dims_min[2], dims_max[2])
-            
-            #trans_cube = vtk.vtkTransformPolyDataFilter()
-            #trans_cube.SetInputConnection(test.GetOutputPort())
-            #trans_cube.SetTransform(trans_matrix)
-            #trans_cube.Update()
-            
-            #writer2 = vmtkscripts.vmtkSurfaceWriter()
-            #writer2.OutputFileName = os.path.join(args.out_dir, "{0}_{1}_quad{2}_box.vtp".format(args.out_file, count,i))
-            #writer2.Input = trans_cube.GetOutput()
-            #writer2.Execute()
+            if (count == 1):
+                test = vtk.vtkCubeSource()
+                test.SetBounds (dims_min[0], dims_max[0], dims_min[1], dims_max[1], dims_min[2], dims_max[2])
+                
+                trans_cube = vtk.vtkTransformPolyDataFilter()
+                trans_cube.SetInputConnection(test.GetOutputPort())
+                trans_cube.SetTransform(trans_matrix)
+                trans_cube.Update()
+                
+                writer2 = vmtkscripts.vmtkSurfaceWriter()
+                writer2.OutputFileName = os.path.join(args.out_dir, "{0}_{1}_quad{2}_box.vtp".format(args.out_file, count,i))
+                writer2.Input = trans_cube.GetOutput()
+                writer2.Execute()
             
         count+=1
 
