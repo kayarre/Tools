@@ -30,7 +30,12 @@ def run_script(args):
     scale_cfd.ScaleFactor = 1000 # meters to mm
     scale_cfd.Surface = mesh2surf.Surface
     scale_cfd.Execute()
-    
+
+    if(args.whole_out):
+        writer_whole = vmtkscripts.vmtkSurfaceWriter()
+        writer_whole.OutputFileName = args.whole_out
+        writer_whole.Input = scale_cfd.Surface
+        writer_whole.Execute()
     
     dist = vmtkscripts.vmtkSurfaceDistance()
     dist.Surface = scale_cfd.Surface
@@ -93,9 +98,9 @@ if __name__=='__main__':
     parser = argparse.ArgumentParser(description='average probed information along lines')
     parser.add_argument("-i", dest="mesh_file", required=True, help="input mesh file", metavar="FILE")
     parser.add_argument("-d", dest="surface_file", required=True, help="input dome surface", metavar="FILE")
-
     parser.add_argument("-o", dest="file_out", required=True, help="output file clipped surface", metavar="FILE")
     parser.add_argument("--inverse", dest="inverse_out", required=False, help="output file of inverse clipped surface", metavar="FILE")
+    parser.add_argument("--whole", dest="whole_out", required=False, help="output file of whole domain ", metavar="FILE")
     args = parser.parse_args()
     #print(args)
     run_script(args)

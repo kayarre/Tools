@@ -79,7 +79,6 @@ def post_proc_cfd(dir_path, vtu_input, cell_type="point",
     #N_peak = 3
     reader.SetTimeStep(N_peak)
     print("loading {0}th timestep to copy data".format(N_peak))
-    calc1.Update()
     calc2.Update()
     grid.DeepCopy(calc2.GetOutput())
     #grid.SetNumberOfTimeSteps(1)
@@ -109,7 +108,6 @@ def post_proc_cfd(dir_path, vtu_input, cell_type="point",
 
     print("loading {0}th timestep for averaging initialization".format(0))
     reader.Update()
-    calc1.Update()
     calc2.Update()
 
     if(cell_type == "cell"):
@@ -174,7 +172,6 @@ def post_proc_cfd(dir_path, vtu_input, cell_type="point",
         reader.SetTimeStep(i)
         print("Time step {0} for average calc".format(i))
         reader.Update()
-        calc1.Update()
         calc2.Update()
 
         if(cell_type == "cell"):
