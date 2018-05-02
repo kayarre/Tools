@@ -94,14 +94,14 @@ def post_proc_cfd_diff(parameter_list):
     grid = vtk.vtkUnstructuredGrid()
     #N_peak = 3
     reader.SetTimeStep(N_peak)
-    print("loading {0}th timestep to copy data".format(N_peak))
     calc2.Update()
+    print("loading peak: {0} timestep to copy data".format(reader.GetTimeStep()))
     grid.DeepCopy(calc2.GetOutput())
 
     reader.SetTimeStep(0)
-    print("loading {0}th timestep for averaging initialization".format(0))
     #reader.Update()
     calc2.Update()
+    print("loading {0}th timestep for averaging initialization".format(reader.GetTimeStep()))
     
     stats = vtk.vtkTemporalStatistics()
     
@@ -112,6 +112,7 @@ def post_proc_cfd_diff(parameter_list):
     stats.ComputeAverageOn()
     stats.Update()
 
+    print("what's the time step after stats :{0}".format(reader.GetTimeStep()))
     grid_out = vtk.vtkUnstructuredGrid()
     grid_out.DeepCopy(stats.GetOutput())
 
@@ -128,10 +129,13 @@ def post_proc_cfd_diff(parameter_list):
     out_data.GetArray("WSS").SetName("WSS_peak")
     out_data.AddArray(grid_data.GetArray("WSSG"))
     out_data.GetArray("WSSG").SetName("WSSG_peak")
+    out_data.AddArray(grid_data.GetArray("absolute_pressure"))
+    out_data.GetArray("absolute_pressure").SetName("pressure_peak")
+
     out_data.GetArray("WSS_average").SetName("TAWSS")
     out_data.GetArray("WSSG_average").SetName("TAWSSG")
 
-    print("got here")
+    print("TAWSSVector")
     calc3 = vtk.vtkArrayCalculator()
     calc3.AddScalarVariable("x_wall_shear_average", "x_wall_shear_average",0)
     calc3.AddScalarVariable("y_wall_shear_average", "y_wall_shear_average",0)
@@ -185,19 +189,30 @@ def post_proc_cfd_diff(parameter_list):
     else:
         calc6.SetAttributeModeToUsePointData()
     calc6.SetResultArrayType(vtk.VTK_DOUBLE)
-    calc6.Update()
-
+    
+    calc7 = vtk.vtkArrayCalculator()
+    calc7.AddScalarVariable("pressure_peak", "pressure_peak",0)
+    calc7.AddScalarVariable("absolute_pressure_average", "absolute_pressure_average",0)
+    calc7.SetFunction("pressure_peak/absolute_pressure_average")
+    calc7.SetResultArrayName("pressure_peak_q_pressure_average")
+    calc7.SetInputConnection(calc6.GetOutputPort())
+    if(cell_type == "cell"):
+        calc7.SetAttributeModeToUseCellData()
+    else:
+        calc7.SetAttributeModeToUsePointData()
+    calc7.SetResultArrayType(vtk.VTK_DOUBLE)
 
     pass_filt = vtk.vtkPassArrays()
-    pass_filt.SetInputConnection(calc6.GetOutputPort())
+    pass_filt.SetInputConnection(calc7.GetOutputPort())
     pass_filt.AddArray(vtk_data_type, "WSS")
     pass_filt.AddArray(vtk_data_type, "WSSG")
-    pass_filt.AddArray(vtk_data_type, "absolute_pressure")
+    pass_filt.AddArray(vtk_data_type, "pressure_peak")
     pass_filt.AddArray(vtk_data_type, "TAWSS")
     pass_filt.AddArray(vtk_data_type, "TAWSSG")
     pass_filt.AddArray(vtk_data_type, "OSI")
     pass_filt.AddArray(vtk_data_type, "WSS_peak_q_TAWSS")
     pass_filt.AddArray(vtk_data_type, "WSSG_peak_q_TAWSSG")
+    pass_filt.AddArray(vtk_data_type, "pressure_peak_q_pressure_average")
 
     pass_filt.Update()
     #if(cell_type == "cell"):
