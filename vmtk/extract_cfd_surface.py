@@ -10,35 +10,33 @@ import copy
 
 # extract the surface from unstructured mesh 
 def run_script(args):
-    print("extract dome from cfd")
+    print("extract dome from clipped cfd surface")
     
     reader_dome = vmtkscripts.vmtkSurfaceReader()
     reader_dome.InputFileName = args.surface_file
     reader_dome.Execute()
     dome_surface = reader_dome.Surface
     
-    mesh_reader = vmtkscripts.vmtkMeshReader()
-    mesh_reader.InputFileName = args.mesh_file
-    mesh_reader.Execute()
+    wall_reader = vmtkscripts.vmtkSurfaceReader()
+    wall_reader.InputFileName = args.wall_file
+    wall_reader.Execute()
     
-    mesh2surf = vmtkscripts.vmtkMeshToSurface()
-    mesh2surf.Mesh = mesh_reader.Mesh
-    mesh2surf.CleanOutput = 0
-    mesh2surf.Execute()
+    #mesh_reader = vmtkscripts.vmtkMeshReader()
+    #mesh_reader.InputFileName = args.mesh_file
+    #mesh_reader.Execute()
     
-    scale_cfd = vmtkscripts.vmtkSurfaceScaling()
-    scale_cfd.ScaleFactor = 1000 # meters to mm
-    scale_cfd.Surface = mesh2surf.Surface
-    scale_cfd.Execute()
-
-    if(args.whole_out):
-        writer_whole = vmtkscripts.vmtkSurfaceWriter()
-        writer_whole.OutputFileName = args.whole_out
-        writer_whole.Input = scale_cfd.Surface
-        writer_whole.Execute()
+    #mesh2surf = vmtkscripts.vmtkMeshToSurface()
+    #mesh2surf.Mesh = mesh_reader.Mesh
+    #mesh2surf.CleanOutput = 0
+    #mesh2surf.Execute()
+    
+    #scale_cfd = vmtkscripts.vmtkSurfaceScaling()
+    #scale_cfd.ScaleFactor = 1000 # meters to mm
+    #scale_cfd.Surface = mesh2surf.Surface
+    #scale_cfd.Execute()
     
     dist = vmtkscripts.vmtkSurfaceDistance()
-    dist.Surface = scale_cfd.Surface
+    dist.Surface = wall_reader.Surface
     dist.ReferenceSurface = dome_surface
     dist.DistanceArrayName = "distance"
     dist.DistanceVectorsArrayName = "distance_vectors"
@@ -96,11 +94,10 @@ def run_script(args):
 
 if __name__=='__main__':
     parser = argparse.ArgumentParser(description='average probed information along lines')
-    parser.add_argument("-i", dest="mesh_file", required=True, help="input mesh file", metavar="FILE")
+    parser.add_argument("-i", dest="wall_file", required=True, help="input cfd wall file", metavar="FILE")
     parser.add_argument("-d", dest="surface_file", required=True, help="input dome surface", metavar="FILE")
     parser.add_argument("-o", dest="file_out", required=True, help="output file clipped surface", metavar="FILE")
     parser.add_argument("--inverse", dest="inverse_out", required=False, help="output file of inverse clipped surface", metavar="FILE")
-    parser.add_argument("--whole", dest="whole_out", required=False, help="output file of whole domain ", metavar="FILE")
     args = parser.parse_args()
     #print(args)
     run_script(args)

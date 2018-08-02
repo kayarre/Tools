@@ -134,6 +134,7 @@ def post_proc_cfd_diff(parameter_list):
 
     out_data.GetArray("WSS_average").SetName("TAWSS")
     out_data.GetArray("WSSG_average").SetName("TAWSSG")
+    out_data.GetArray("absolute_pressure_average").SetName("pressure_average")
 
     print("TAWSSVector")
     calc3 = vtk.vtkArrayCalculator()
@@ -192,8 +193,8 @@ def post_proc_cfd_diff(parameter_list):
     
     calc7 = vtk.vtkArrayCalculator()
     calc7.AddScalarVariable("pressure_peak", "pressure_peak",0)
-    calc7.AddScalarVariable("absolute_pressure_average", "absolute_pressure_average",0)
-    calc7.SetFunction("pressure_peak/absolute_pressure_average")
+    calc7.AddScalarVariable("pressure_average", "pressure_average",0)
+    calc7.SetFunction("pressure_peak/pressure_average")
     calc7.SetResultArrayName("pressure_peak_q_pressure_average")
     calc7.SetInputConnection(calc6.GetOutputPort())
     if(cell_type == "cell"):
@@ -204,9 +205,10 @@ def post_proc_cfd_diff(parameter_list):
 
     pass_filt = vtk.vtkPassArrays()
     pass_filt.SetInputConnection(calc7.GetOutputPort())
-    pass_filt.AddArray(vtk_data_type, "WSS")
-    pass_filt.AddArray(vtk_data_type, "WSSG")
+    pass_filt.AddArray(vtk_data_type, "WSS_peak")
+    pass_filt.AddArray(vtk_data_type, "WSSG_peak")
     pass_filt.AddArray(vtk_data_type, "pressure_peak")
+    pass_filt.AddArray(vtk_data_type, "pressure_average")
     pass_filt.AddArray(vtk_data_type, "TAWSS")
     pass_filt.AddArray(vtk_data_type, "TAWSSG")
     pass_filt.AddArray(vtk_data_type, "OSI")

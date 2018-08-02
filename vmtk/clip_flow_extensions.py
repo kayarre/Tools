@@ -98,7 +98,7 @@ def Execute(args):
         box_radius_trim = br_trim.GetPointData().GetArray("BoundaryRadius").GetTuple(point_trim_id)
         #print(box_radius_trim, box_radius)
         
-        extra_room = 1.07
+        extra_room = args.margin
         extra_z = 0.0
         r_max = extra_room*max([box_radius[0], box_radius_trim[0]])  # max radius
         z_max = extra_room*v_mag
@@ -172,6 +172,8 @@ if __name__=='__main__':
     parser.add_argument("-o", dest="out_file", required=True,
                         help="output filename for clipped surface", metavar="FILE",
                         default = "case_wall_clip")
+    parser.add_argument("--margin", dest="margin", type=float, help="specify the global  margin of the clip box", metavar="FLOAT",
+                        default = 1.1)
     args = parser.parse_args()
     #print(args)
     Execute(args)
