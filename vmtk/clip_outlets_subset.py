@@ -43,7 +43,7 @@ def Execute(args):
         pt = boundary_reference.GetPoint(i) #B
         ctr_ptId = locator_cell.FindClosestPoint(pt)
         
-        vmtkscripts.vmtkSurfaceSlipperCenterline2
+        vmtkscripts.vmtkSurfaceClipperCenterline2
 
 
     boundary_reference.GetPointData().AddArray(avg_area)

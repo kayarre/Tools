@@ -150,7 +150,7 @@ def Execute(args):
     centerlines.BuildCells()
     
     # calculate length for each segment
-    # seems to be some error in preivous calculation
+    # seems to be some error in prevous calculation
     for i in range(centerlines.GetNumberOfCells()):
         cell = centerlines.GetCell(i)
         length_ = 0.0
@@ -313,7 +313,10 @@ def Execute(args):
                 midway_length = 0.0
                 
                 prev_point = centerlines.GetPoint(pt_id_pd)
+                print("hello")
                 for k in range(tmp_idx, stop, step):
+                    if k == 1198:
+                        print(k)
                     point = centerlines.GetPoint(cell.GetPointIds().GetId(k))
                     midway_length += vtk.vtkMath.Distance2BetweenPoints(prev_point, point)**0.5
                     prev_point = point
