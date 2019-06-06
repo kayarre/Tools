@@ -202,10 +202,15 @@ def VWI_Enhancement(post, pre, mean_post_vent, mean_pre_vent, kind = "E1",
         #"E = ( eta - mean_eta_vent) / stddev(eta_vent) - (xi - mean_xi_vent) / stddev(xi_vent)"
         post_ = (post - mean_post_vent) / std_post_vent
         pre_ = (pre - mean_pre_vent) / std_pre_vent 
-    elif kind == "E4":
+    elif kind == "E5":
         # ratio of normalized things, similar to E3
         E = ( std_pre_vent / std_post_vent ) * (post - mean_post_vent) / (pre - mean_pre_vent)
         return E
+    elif kind == "E4":
+        # ratio of normalized things, similar to E3
+        num = np.sqrt(std_post_vent**2 + std_pre_vent**2)
+        post_ = (post - mean_post_vent) / num
+        pre_ = (pre - mean_pre_vent) / num 
     else:
         print("undefined enhancement kind")
         return 0.0
@@ -281,7 +286,10 @@ write_file_dir = "/home/sansomk/caseFiles/mri/VWI_proj"
 write_dir = "VWI_analysis"
 plots_dir = "plots"
 overwrite = 0
-skip_write = True
+overwrite_out = False
+skip_bootstrap = True
+
+skip_write = False
 
 with open(json_file, 'r') as f:
     data = json.load(f)
@@ -404,10 +412,11 @@ for case_id, case_imgs  in image_dict.items():
     #print(case_id, "post vent inter shape: {0} pre vent inter shape {1}".format(img_post_back_inter.shape ,img_pre_back_inter.shape ))
     
     print(case_id, "post back STD: {0:.4f} pre back STD {1:.4f}".format(back_std_post, back_std_pre))
-    print(case_id, "post inter STD: {0:.4f} pre inter STD {1:.4f}".format(np.std(img_post_back_inter) , np.std(img_pre_back_inter) ))  
+    print(case_id, "post inter STD: {0:.4f} pre inter STD {1:.4f}".format(np.std(img_post_back_inter) , np.std(img_pre_back_inter) ))
     
     print(case_id, "post PI Mean: {0:.4f} pre PI mean {1:.4f}".format(np.mean(eta_PI), np.mean(xi_PI)))
     print(case_id, "post PI STD: {0:.4f} pre PI STD {1:.4f}".format(np.std(eta_PI), np.std(xi_PI)))
+
     #koay_result_post, err = newton_koay(SNR_post_vent, channels)
     
     
@@ -420,9 +429,9 @@ for case_id, case_imgs  in image_dict.items():
 
     eta_vent = np.mean(img_post_vent) # mean ventricle post
     xi_vent = np.mean(img_pre_vent) # mean ventricle pre
-    u_eta_vent_2 = cov_vent[0,0] /  N_vent  # uncertainty vent post square
-    u_xi_vent_2 = cov_vent[1,1] /  N_vent  # uncertainty vent pre square
-    u_eta_xi_vent = cov_vent[0,1] / N_vent # covariance between pre and post
+    u_eta_vent_2 = cov_vent[0,0] #/  N_vent  # uncertainty vent post square
+    u_xi_vent_2 = cov_vent[1,1] #/  N_vent  # uncertainty vent pre square
+    u_eta_xi_vent = cov_vent[0,1] #/ N_vent # covariance between pre and post
     
     #print(np.sqrt(2.0*np.trace(cov_vent) - np.sum(cov_vent)))
     u_eta_back_2 = cov_back[0,0] # uncertainty in post measures square
@@ -442,6 +451,9 @@ for case_id, case_imgs  in image_dict.items():
     E1 = VWI_Enhancement(eta, xi, eta_vent, xi_vent, kind = "E1")
     E2 = VWI_Enhancement(eta, xi, eta_vent, xi_vent, kind = "E2")
     E3 = VWI_Enhancement(eta, xi, eta_vent, xi_vent, kind = "E3",
+                                                        std_post_vent = np.sqrt(u_eta_vent_2), 
+                                                        std_pre_vent = np.sqrt(u_xi_vent_2))
+    E4 = VWI_Enhancement(eta, xi, eta_vent, xi_vent, kind = "E4",
                                                         std_post_vent = np.sqrt(u_eta_vent_2), 
                                                         std_pre_vent = np.sqrt(u_xi_vent_2))
     #E4 = VWI_Enhancement(eta, xi, eta_vent, xi_vent, kind = "E4",
@@ -472,36 +484,55 @@ for case_id, case_imgs  in image_dict.items():
                                                         std_post_vent = np.sqrt(u_eta_vent_2), 
                                                         std_pre_vent = np.sqrt(u_xi_vent_2),
                                                         return_parts=True)
+    E4_model, E4_post_model, E4_pre_model = VWI_Enhancement(eta_model, xi_model,
+                                                            eta_vent, xi_vent, kind = "E4",
+                                                        std_post_vent = np.sqrt(u_eta_vent_2), 
+                                                        std_pre_vent = np.sqrt(u_xi_vent_2),
+                                                        return_parts=True)
 
     E_PI, E_post_PI, E_pre_PI = VWI_Enhancement(eta_PI, xi_PI,
                                                            1.0, 1.0, kind = "E1", return_parts=True)
 
 
-    gs4 = plt.GridSpec(2,2, wspace=0.2, hspace=0.8)
-    fig4 = plt.figure(figsize=(13, 13))
-    ax1_4 = fig4.add_subplot(gs4[0, 0])
+    try:
+        # Create target Directory
+        test = os.path.join(write_file_dir, case_id, plots_dir)
+        os.mkdir(test)
+        print("Directory " , test ,  " Created ") 
+    except FileExistsError:
+        print("Directory " , test ,  " already exists")
+
+    gs4 = plt.GridSpec(3,2, wspace=0.2, hspace=0.8)
+    fig4 = plt.figure(figsize=(17, 13))
+    ax1_4 = fig4.add_subplot(gs4[0, :])
     ax1_4.set_title("Compare E pre vs post", fontsize = font_size)
     ax1_4.scatter(E_pre_model.ravel(), E_post_model.ravel())
     ax1_4.set_xlabel(r'pre $\xi$', fontsize = font_size)
     ax1_4.set_ylabel(r'post $\eta$', fontsize = font_size)
     
-    ax2_4 = fig4.add_subplot(gs4[0, 1])
+    ax2_4 = fig4.add_subplot(gs4[1, 0])
     ax2_4.set_title("Compare E1 pre vs post", fontsize = font_size)
     ax2_4.scatter(E1_pre_model.ravel(), E1_post_model.ravel())
     ax2_4.set_xlabel(r'pre $\xi$', fontsize = font_size)
     ax2_4.set_ylabel(r'post $\frac{ \bar{\xi}_{vent}}{ \bar{\eta}_{vent}} \eta$', fontsize = font_size)
     
-    ax3_4 = fig4.add_subplot(gs4[1, 0])
+    ax3_4 = fig4.add_subplot(gs4[1, 1])
     ax3_4.set_title("Compare E2 pre vs post", fontsize = font_size)
     ax3_4.scatter(E2_pre_model.ravel(), E2_post_model.ravel())
     ax3_4.set_xlabel(r'pre $\frac{\xi}{\bar{\xi}_{vent}}$', fontsize = font_size)
     ax3_4.set_ylabel(r'post $\frac{\eta}{\bar{\eta}_{vent}}$', fontsize = font_size)
     
-    ax4_4 = fig4.add_subplot(gs4[1, 1])
+    ax4_4 = fig4.add_subplot(gs4[2, 0])
     ax4_4.set_title("Compare E3 pre vs post", fontsize = font_size)
     ax4_4.scatter(E3_pre_model.ravel(), E3_post_model.ravel())
     ax4_4.set_xlabel(r'pre $ \frac{\xi - \bar{\xi}_{vent}}{ \sigma_{ \xi_{vent} } }$', fontsize = font_size)
     ax4_4.set_ylabel(r'post $\frac{\eta - \bar{\eta}_{vent}}{\sigma_{ \eta_{vent} } }$', fontsize = font_size)
+    
+    ax5_4 = fig4.add_subplot(gs4[2, 1])
+    ax5_4.set_title("Compare E4 pre vs post", fontsize = font_size)
+    ax5_4.scatter(E4_pre_model.ravel(), E4_post_model.ravel())
+    ax5_4.set_xlabel(r'pre $ \frac{\xi - \bar{\xi}_{vent}}{ \sqrt{\sigma^2_{ \eta_{vent}} + \sigma^2_{ \xi_{vent} } } }$', fontsize = font_size)
+    ax5_4.set_ylabel(r'post $\frac{\eta - \bar{\eta}_{vent}}{\sqrt{\sigma^2_{ \eta_{vent}} + \sigma^2_{ \xi_{vent} } } }$', fontsize = font_size)
     
     #ax5_4 = fig4.add_subplot(gs4[1, 1])
     #ax5_4.set_title("Compare PI pre vs post", fontsize = font_size)
@@ -509,7 +540,7 @@ for case_id, case_imgs  in image_dict.items():
     #ax5_4.set_xlabel(r'pre $\xi$', fontsize = font_size)
     #ax5_4.set_ylabel(r'pre $\eta$', fontsize = font_size)
     
-    path_E3_model = os.path.join(write_file_dir, case_id, plots_dir, "Compare_E3_model.png")
+    path_E3_model = os.path.join(write_file_dir, case_id, plots_dir, "Compare_Enhancement_model.png")
     fig4.savefig(path_E3_model)
     del fig4
     
@@ -523,7 +554,7 @@ for case_id, case_imgs  in image_dict.items():
     ax1_5.set_ylabel(r'post $\eta_{ventricle}$', fontsize = font_size)
     
     ax2_5 = fig5.add_subplot(gs5[:, 1])
-    ax2_5.set_title("Compare PI pre vs post", fontsize = font_size)
+    ax2_5.set_title("Compare Pituitary Infindibulum pre vs post", fontsize = font_size)
     ax2_5.scatter(xi_PI, eta_PI)
     ax2_5.axis('equal')
     ax2_5.set_xlabel(r'pre $\xi_{ventricle}$', fontsize = font_size)
@@ -533,24 +564,91 @@ for case_id, case_imgs  in image_dict.items():
     fig5.savefig(path_ventricle_model)
     del fig5
     
-    
-    #E4_model = VWI_Enhancement(eta_model, xi_model, eta_vent, xi_vent, kind = "E4",
-                                                        #std_post_vent = np.sqrt(u_eta_vent_2), 
-                                                        #std_pre_vent = np.sqrt(u_xi_vent_2))
-    
-    #E4_model_param = stats.cauchy.fit(E4_model)
-    ## Separate parts of parameters
-    #arg = E4_model_param[:-2]
-    #loc = E4_param[-2]
-    #scale = E4_model_param[-1]
-    #print("cauchy model params", E4_model_param)
+    # create histogram  plots of ventricle and model
+    n_bins2 = 4000
+    n_bins3 = 100
+    gs2 = plt.GridSpec(5,2, wspace=0.2, hspace=0.8)
+    #gs2 = plt.GridSpec(4,4, wspace=0.2, hspace=0.8) 
+    # Create a figure
+    fig2 = plt.figure(figsize=(17, 13))
 
-    ## Get sane start and end points of distribution
-    #start = stats.cauchy.ppf(0.05, *arg, loc=loc, scale=scale) if arg else stats.cauchy.ppf(0.05, loc=loc, scale=scale)
-    #end = stats.cauchy.ppf(0.95, *arg, loc=loc, scale=scale) if arg else stats.cauchy.ppf(0.95, loc=loc, scale=scale)
-    #E4_model_x_test = np.linspace(start, end, 10000)
-    #E4_model_pdf_fitted = stats.cauchy.pdf(E4_model_x_test, *arg, loc=loc, scale=scale)
+    # SUBFIGURE 1
+    # Create subfigure 1 (takes over two rows (0 to 1) and column 0 of the grid)
+    ax1a_2 = fig2.add_subplot(gs2[0, 0])
+    ax1a_2.set_title("{0}: $E$  Volume".format(case_id), fontsize = font_size)
+    ax1a_2.set_ylabel("count", fontsize = font_size)
+    #ax1a_2.set_xlabel("Enhancement", fontsize = font_size)
+    ax1b_2 = fig2.add_subplot(gs2[0,1])
+    ax1b_2.set_title("{0}: $E$ Volume".format(case_id), fontsize = font_size)
+    #ax1b_2.set_ylabel("count", fontsize = font_size)
+    
+    ax2a_2 = fig2.add_subplot(gs2[1, 0])
+    ax2a_2.set_title("{0}: $E_1$  Volume".format(case_id), fontsize = font_size)
+    ax2a_2.set_ylabel("count", fontsize = font_size)
+    ax2b_2 = fig2.add_subplot(gs2[1, 1])
+    ax2b_2.set_title("{0}: $E_1$ Volume".format(case_id), fontsize = font_size)
+    
+    ax3a_2 = fig2.add_subplot(gs2[2, 0])
+    ax3a_2.set_title("{0}: $E_2$  Volume".format(case_id), fontsize = font_size)
+    ax3a_2.set_ylabel("count", fontsize = font_size)
+    ax3b_2 = fig2.add_subplot(gs2[2, 1])
+    ax3b_2.set_title("{0}: $E_2$ Volume".format(case_id), fontsize = font_size)
+    
+    ax4a_2 = fig2.add_subplot(gs2[3, 0])
+    ax4a_2.set_title("{0}: $E_3$  Volume".format(case_id), fontsize = font_size)
+    ax4a_2.set_ylabel("count", fontsize = font_size)
+    ax4b_2 = fig2.add_subplot(gs2[3, 1])
+    ax4b_2.set_title("{0}: $E_3$ Volume".format(case_id), fontsize = font_size)
+    
+    ax5a_2 = fig2.add_subplot(gs2[3, 0])
+    ax5a_2.set_title("{0}: $E_4$  Volume".format(case_id), fontsize = font_size)
+    ax5a_2.set_ylabel("count", fontsize = font_size)
+    ax5a_2.set_xlabel("Enhancement", fontsize = font_size)
+    
+    ax5b_2 = fig2.add_subplot(gs2[3, 1])
+    ax5b_2.set_title("{0}: $E_4$  Volume".format(case_id), fontsize = font_size)
+    ax5b_2.set_xlabel("Enhancement", fontsize = font_size)
 
+    ax1a_2.hist(E.ravel(), bins='auto', label="$E$")
+    ax1a_2.axvline(x=np.mean(E), color='r')
+
+    ax1b_2.hist(E_model.ravel(), bins='auto', label="$E$  model")
+    ax1b_2.axvline(x=np.mean(E), color='r')
+    
+    ax2a_2.hist(E1.ravel(), bins='auto', label="$E_1$")
+    ax2a_2.axvline(x=np.mean(E), color='r')
+
+    ax2b_2.hist(E1_model.ravel(), bins='auto', label="$E_1$ model")
+    ax2b_2.axvline(x=np.mean(E1), color='r')
+    
+    ax3a_2.hist(E2.ravel(), bins='auto', label="$E_2$")
+    ax3a_2.axvline(x=np.mean(E2), color='r')
+
+    ax3b_2.hist(E2_model.ravel(), bins='auto', label="$E_2$ model")
+    ax3b_2.axvline(x=np.mean(E2), color='r')
+    
+    ax4a_2.hist(E2.ravel(), bins='auto', label="$E_3$")
+    ax4a_2.axvline(x=np.mean(E2), color='r')
+
+    ax4b_2.hist(E3_model.ravel(), bins='auto', label="$E_3$ model")
+    ax4b_2.axvline(x=np.mean(E3), color='r')
+
+    ax5a_2.hist(E4.ravel(), bins='auto', label="$E_4$")
+    ax5a_2.axvline(x=np.mean(E4), color='r')
+
+    ax5b_2.hist(E4_model.ravel(), bins='auto', label="$E_4$ model")
+    ax5b_2.axvline(x=np.mean(E4), color='r')
+    
+    #ax8_2.hist(u_E_confidence.ravel(), bins=n_bins3)
+    #ax8_2.axvline(x=np.mean(u_E_confidence), color='r')
+    #ax8_2.set_ylabel("count", fontsize = font_size)
+    path_images = os.path.join(write_file_dir, case_id, plots_dir, "Compare_Enhancement_Distribution.png")
+    
+    image_path_list.append(path_images)
+    fig2.savefig(path_images)
+    del fig2
+
+    
     
     # determine which term is the driver for uncertainty
     
@@ -574,318 +672,229 @@ for case_id, case_imgs  in image_dict.items():
     u_E2_confidence = 2.0 * u_E2 # gaussian 95% confidence interval
     
     u_E3_2 = (1.0 / (u_eta_vent_2) * u_eta_back_2 +
-                    1.0 / (u_xi_vent_2) * u_xi_back_2 +
-                    2.0 / N_vent -
-                    2.0 / (np.sqrt(u_eta_vent_2 *u_xi_vent_2)) * u_eta_xi_back -
-                    2.0 / (np.sqrt(u_eta_vent_2 *u_xi_vent_2)) * u_eta_xi_vent +
-                    np.square(eta - eta_vent) / u_eta_vent_2  * (N_vent / (N_vent - 1.0)) +
-                    np.square(xi - xi_vent) / u_xi_vent_2  * (N_vent / (N_vent - 1.0))
+                    1.0 / (u_xi_vent_2) * u_xi_back_2 -
+                    2.0 / (np.sqrt(u_eta_vent_2 *u_xi_vent_2)) * u_eta_xi_back +
+                    2.0 - 
+                    2.0 / (np.sqrt(u_eta_vent_2 *u_xi_vent_2)) * u_eta_xi_vent
                     )
     u_E3 = np.sqrt(u_E3_2)
     u_E3_confidence = 2.0 * u_E3 # gaussian 95% confidence interval
+    
+    
+    u_E4_2 = ( 1.0 / (u_eta_vent_2 + u_xi_vent_2) * ( 
+                        u_eta_back_2 + u_xi_back_2 -
+                        2.0 * u_eta_xi_back +
+                        u_eta_vent_2 + u_xi_vent_2 -
+                        2.0 * u_eta_xi_vent
+                        )
+                    )
+    u_E4 = np.sqrt(u_E4_2)
+    u_E4_confidence = 2.0 * u_E4 # gaussian 95% confidence interval
+    
     
 
     
     print(np.mean(u_E_2), np.mean(u_E), np.mean(u_E_confidence))
     print(np.mean(u_E1_2), np.mean(u_E1), np.mean(u_E1_confidence))
     print(np.mean(u_E2_2), np.mean(u_E2), np.mean(u_E2_confidence))
+    print(np.mean(u_E3_2), np.mean(u_E3), np.mean(u_E3_confidence))
+    print(np.mean(u_E4_2), np.mean(u_E4), np.mean(u_E4_confidence))
     print("pink")
-    #u_E_percent = 100.0*np.divide(u_E_confidence, np.absolute(E), out=-1.0*np.ones_like(E), where=E!=0)
-    #u_E1_percent = 100.0*np.divide(u_E1_confidence, np.absolute(E1), out=-1.0*np.ones_like(E1), where=E1!=0)
-    #u_E2_percent = 100.0*np.divide(u_E2_confidence, np.absolute(E2), out=-1.0*np.ones_like(E2), where=E2!=0)
-
-    #print(np.mean(u_E_percent), np.mean(u_E1_percent), np.mean(u_E2_percent))
-    #print(np.std(u_E_percent), np.std(u_E1_percent), np.std(u_E2_percent))
-    #print(np.mean(eta_vent_term ),  np.mean(xi_vent_term ), eta_term, xi_term, np.mean(eta_xi_term), np.mean(eta_xi_vent_term))
-
-    n_bins2 = 4000
-    n_bins3 = 100
-    gs2 = plt.GridSpec(4,4, wspace=0.2, hspace=0.8)
-    #gs2 = plt.GridSpec(4,4, wspace=0.2, hspace=0.8) 
-    # Create a figure
-    fig2 = plt.figure(figsize=(13, 13))
-
-    # SUBFIGURE 1
-    # Create subfigure 1 (takes over two rows (0 to 1) and column 0 of the grid)
-    ax1_2 = fig2.add_subplot(gs2[0, 0:2])
-    ax1_2.set_title("{0}: Enhancement  Volume".format(case_id), fontsize = font_size)
-    ax2_2 = fig2.add_subplot(gs2[1, 0:2])
-    ax2_2.set_title("Enhancement 1 Volume", fontsize = font_size)
     
-    ax3_2 = fig2.add_subplot(gs2[2,0:2])
-    ax3_2.set_title("Enhancement 2 Volume", fontsize = font_size)
-    #ax4_2 = fig2.add_subplot(gs2[3, 0])
-    #ax4_2.set_title(r'Enhancement 1 uncertainty', fontsize = font_size)
-    ax9_2 = fig2.add_subplot(gs2[3, 0:2])
-    ax9_2.set_title("Enhancement 3 Volume", fontsize = font_size)
-    
-    ax5_2 = fig2.add_subplot(gs2[0, 2:])
-    ax5_2.set_title("{0}: Enhancement model".format(case_id), fontsize = font_size)
-    ax6_2 = fig2.add_subplot(gs2[1, 2:])
-    ax6_2.set_title("Enhancement 1 model", fontsize = font_size)
-    
-    ax7_2 = fig2.add_subplot(gs2[2, 2:])
-    ax7_2.set_title("Enhancement 2 model", fontsize = font_size)
-    #ax8_2 = fig2.add_subplot(gs2[3, 2:])
-    #ax8_2.set_title(r'Enhancement 1 uncertainty', fontsize = font_size)
-    ax10_2 = fig2.add_subplot(gs2[3, 2:])
-    ax10_2.set_title("Enhancement 3 model", fontsize = font_size)
-    
-
-    #E_pdf_fitted, E_x_test = gumbel_r_fit(E.ravel(), n_pts=2000, tail=0.05)
-    #E1_pdf_fitted, E1_x_test = gumbel_r_fit(E1.ravel(), n_pts=2000, tail=0.05)
-    #E2_pdf_fitted, E2_x_test = gumbel_r_fit(E2.ravel(), n_pts=2000, tail=0.05)
-    #E3_pdf_fitted, E3_x_test = gumbel_r_fit(E3.ravel(), n_pts=2000, tail=0.05)
-
-    ax1_2.hist(E.ravel(), bins=n_bins2, label="hist")
-    ax1_2.axvline(x=np.mean(E), color='r')
-    #ax1_2.plot(E_x_test, E_pdf_fitted, label="pdf")
-    
-    ax2_2.hist(E1.ravel(), bins=n_bins2)
-    ax2_2.axvline(x=np.mean(E1), color='r')
-    #ax2_2.plot(E1_x_test, E1_pdf_fitted, label="pdf")
-    
-    ax2_2.set_xlabel("Enhancement", fontsize = font_size)
-    ax1_2.set_ylabel("count", fontsize = font_size)
-    ax2_2.set_ylabel("count", fontsize = font_size)
-    
-    ax3_2.hist(E2.ravel(), bins=n_bins2)
-    ax3_2.axvline(x=np.mean(E2), color='r')
-    #ax3_2.plot(E2_x_test, E2_pdf_fitted, label="pdf")
-    ax3_2.set_xlabel("Enhancement", fontsize = font_size)
-    ax3_2.set_ylabel("count", fontsize = font_size)
-    
-    ax9_2.hist( E3, bins=n_bins2)
-    ax9_2.axvline(x=np.mean(E3), color='r')
-    #ax9_2.plot(E3_x_test, E3_pdf_fitted, label="pdf")
-    #ax9_2.plot(E4_pdf_fitted)
-    ax9_2.set_xlabel("Enhancement", fontsize = font_size)
-    ax9_2.set_ylabel("count", fontsize = font_size)
-    
-    #ax4_2.hist(u_E_confidence.ravel(), bins=n_bins2)
-    #ax4_2.axvline(x=np.mean(u_E_confidence), color='r')gs2 = plt.GridSpec(4,4, wspace=0.2, hspace=0.8)
-    #ax4_2.set_ylabel("count", fontsize = font_size)
-
-
-    #E_pdf_fitted_model, E_x_model = gumbel_r_fit(E.ravel(), n_pts=2000, tail=0.05)
-    #E1_pdf_fitted_model, E1_x_model = gumbel_r_fit(E1.ravel(), n_pts=2000, tail=0.05)
-    #E2_pdf_fitted_model, E2_x_model = gumbel_r_fit(E2.ravel(), n_pts=2000, tail=0.05)
-    #E3_pdf_fitted_model, E3_x_model = gumbel_r_fit(E3.ravel(), n_pts=2000, tail=0.05)
-
-    ax5_2.hist(E_model.ravel(), bins=n_bins3)
-    ax5_2.axvline(x=np.mean(E_model), color='r')
-    #ax5_2.plot(E_x_model, E_pdf_fitted_model, label="pdf")
-    ax5_2.set_ylabel("count", fontsize = font_size)
-    
-    ax6_2.hist(E1_model.ravel(), bins=n_bins3)
-    ax6_2.set_ylabel("count", fontsize = font_size)
-    ax6_2.axvline(x=np.mean(E1_model), color='r')
-    #ax6_2.plot(E1_x_model, E1_pdf_fitted_model, label="pdf")
-    ax6_2.set_xlabel("Enhancement", fontsize = font_size)
-    
-    ax7_2.hist(E2_model.ravel(), bins=n_bins3)
-    ax7_2.axvline(x=np.mean(E2_model), color='r')
-    #ax7_2.plot(E2_x_model, E2_pdf_fitted_model, label="pdf")
-    ax7_2.set_xlabel("Enhancement", fontsize = font_size)
-    ax7_2.set_ylabel("count", fontsize = font_size)
-
-    ax10_2.hist( E3_model, bins=n_bins3)
-    ax10_2.axvline(x=np.mean(E3_model), color='r')
-    #ax10_2.plot(E3_x_model, E3_pdf_fitted_model, label="pdf")
-    #ax10_2.plot(E_model_pdf_fitted)
-    ax10_2.set_xlabel("Enhancement", fontsize = font_size)
-    ax10_2.set_ylabel("count", fontsize = font_size)
-    
-    #ax8_2.hist(u_E_confidence.ravel(), bins=n_bins3)
-    #ax8_2.axvline(x=np.mean(u_E_confidence), color='r')
-    #ax8_2.set_ylabel("count", fontsize = font_size)
-    path_images = os.path.join(write_file_dir, case_id, plots_dir, "Compare_Enhancement_Distribution.png")
-    
-    try:
-        # Create target Directory
-        test = os.path.join(write_file_dir, case_id, plots_dir)
-        os.mkdir(test)
-        print("Directory " , test ,  " Created ") 
-    except FileExistsError:
-        print("Directory " , test ,  " already exists")
-    
-    image_path_list.append(path_images)
-    fig2.savefig(path_images)
-    del fig2
-
-    #plt.show()
-
     E_full = VWI_Enhancement(case_imgs["post_float"][0], case_imgs["pre2post"][0], 1.0, 1.0, kind = "E1")
+    write_list["E.nrrd"] = E_full
     E1_full = VWI_Enhancement(case_imgs["post_float"][0], case_imgs["pre2post"][0], eta_vent, xi_vent, kind = "E1")
+    write_list["E1.nrrd"] = E1_full
     E2_full = VWI_Enhancement(case_imgs["post_float"][0], case_imgs["pre2post"][0], eta_vent, xi_vent, kind = "E2")
-    E3_full, E3_post, E3_pre = VWI_Enhancement(case_imgs["post_float"][0], case_imgs["pre2post"][0], eta_vent, xi_vent, kind = "E3",
+    write_list["E2.nrrd"] = E2_full
+    E3_full= VWI_Enhancement(case_imgs["post_float"][0], case_imgs["pre2post"][0], eta_vent, xi_vent, kind = "E3",
                                                         std_post_vent = np.sqrt(u_eta_vent_2), 
                                                         std_pre_vent = np.sqrt(u_xi_vent_2), 
-                                                        return_parts=True)
+                                                        return_parts=False)
+    write_list["E3.nrrd"] = E3_full
+    E4_full, E4_post, E4_pre = VWI_Enhancement(case_imgs["post_float"][0], case_imgs["pre2post"][0], eta_vent, xi_vent, kind = "E4",
+                                                        std_post_vent = np.sqrt(u_eta_vent_2), 
+                                                        std_pre_vent = np.sqrt(u_xi_vent_2), 
+                                                        return_parts=False)
+    write_list["E4.nrrd"] = E4_full
 
-    gs3 = plt.GridSpec(1,1, wspace=0.2, hspace=0.8)
-    fig3 = plt.figure(figsize=(13, 13))
-    ax1_3 = fig3.add_subplot(gs3[0, 0])
-    ax1_3.set_title("Compare E3 pre vs post", fontsize = font_size)
-    ax1_3.scatter(E3_pre.ravel(), E3_post.ravel())
-    ax1_3.set_xlabel(r'pre $ \frac{\xi - \bar{\xi}_{vent}}{std(\xi_{vent})}$', fontsize = font_size)
-    ax1_3.set_ylabel(r'post $\frac{\eta - \bar{\eta}_{vent}}{std(\eta_{vent})}$', fontsize = font_size)
-    
-    path_E3 = os.path.join(write_file_dir, case_id, plots_dir, "Compare_E3.png")
-    fig3.savefig(path_E3)
-    del fig3
 
-    #uE = -999.0*np.ones_like(E_full)
-    #uE[non_zero_indx] = u_E_percent
-    #uE1 = -999.0*np.ones_like(E1_full)
-    #uE1[non_zero_indx] = u_E1_percent
-    #uE2 = -999.0*np.ones_like(E2_full)
-    #uE2[non_zero_indx] = u_E2_percent
+    #gs3 = plt.GridSpec(1,1, wspace=0.2, hspace=0.8)
+    #fig3 = plt.figure(figsize=(13, 13))
+    #ax1_3 = fig3.add_subplot(gs3[0, 0])
+    #ax1_3.set_title("Compare E3 pre vs post", fontsize = font_size)
+    #ax1_3.scatter(E3_pre.ravel(), E3_post.ravel())
+    #ax1_3.set_xlabel(r'pre $ \frac{\xi - \bar{\xi}_{vent}}{std(\xi_{vent})}$', fontsize = font_size)
+    #ax1_3.set_ylabel(r'post $\frac{\eta - \bar{\eta}_{vent}}{std(\eta_{vent})}$', fontsize = font_size)
     
+    #path_E3 = os.path.join(write_file_dir, case_id, plots_dir, "Compare_E3.png")
+    #fig3.savefig(path_E3)
+    #del fig3
+
+   
     # create confidence arrays
     uE = -1.0*np.ones_like(E_full)
     uE[non_zero_indx] = u_E_confidence
+    write_list["UE.nrrd"] = uE
     uE1 = -1.0*np.ones_like(E1_full)
     uE1[non_zero_indx] = u_E1_confidence
+    write_list["UE1.nrrd"] = uE1
     uE2 = -1.0*np.ones_like(E2_full)
     uE2[non_zero_indx] = u_E2_confidence
+    write_list["UE2.nrrd"] = uE2
     uE3 = -1.0*np.ones_like(E3_full)
     uE3[non_zero_indx] = u_E3_confidence
+    write_list["UE3.nrrd"] = uE3
+    uE4 = -1.0*np.ones_like(E4_full)
+    uE4[non_zero_indx] = u_E4_confidence
+    write_list["UE4.nrrd"] = uE4
 
     # threshold 
-    indx_E = np.where(E_full > uE)
+    indx_E = np.where(E_full > 0.0)
     E_thresh = np.zeros_like(E_full)
     E_thresh[indx_E] = E_full[indx_E]
+    write_list["E_thresh.nrrd"] = E_thresh
     
-    indx_E1 = np.where(E1_full > uE1)
+    indx_E1 = np.where(E1_full > 0.0)
     E1_thresh = np.zeros_like(E1_full)
     E1_thresh[indx_E1] = E1_full[indx_E1]
+    write_list["E1_thresh.nrrd"] = E1_thresh
 
-    indx_E2 = np.where(E2_full > uE2)
+    indx_E2 = np.where(E2_full > 0.0)
     E2_thresh = np.zeros_like(E2_full)
     E2_thresh[indx_E2] = E2_full[indx_E2]
+    write_list["E2_thresh.nrrd"] = E2_thresh
 
-    indx_E3 = np.where(E3_full > uE3)
+    indx_E3 = np.where(E3_full > 0.0)
     E3_thresh = np.zeros_like(E3_full)
     E3_thresh[indx_E3] = E3_full[indx_E3]
+    write_list["E3_thresh.nrrd"] = E3_thresh
+    
+    indx_E4 = np.where(E4_full > 0.0.)
+    E4_thresh = np.zeros_like(E4_full)
+    E4_thresh[indx_E4] = E4_full[indx_E4]
+    write_list["E4_thresh.nrrd"] = E4_thresh
     
     if (skip_write) :
         pass
     else:
-        #E4_full = VWI_Enhancement(case_imgs["post_float"][0], case_imgs["pre2post"][0], eta_vent, xi_vent, kind = "E4",
-                                                            #std_post_vent = np.sqrt(u_eta_vent_2), 
-                                                            #std_pre_vent = np.sqrt(u_xi_vent_2))
-        #nrrd.write("test_interval_2.nrrd", u_E_2, case_imgs["VWI_post_masked_vent"][1])
-        #nrrd.write("test_interval.nrrd", u_E_confidence, case_imgs["VWI_post_masked_vent"][1])
-        nrrd.write(os.path.join(write_file_dir, case_id, write_dir, "E.nrrd"), E_full, case_imgs["VWI_post_masked_vent"][1])
-        nrrd.write(os.path.join(write_file_dir, case_id, write_dir, "E1.nrrd"), E1_full, case_imgs["VWI_post_masked_vent"][1])
-        nrrd.write(os.path.join(write_file_dir, case_id, write_dir, "E2.nrrd"), E2_full, case_imgs["VWI_post_masked_vent"][1])
-        nrrd.write(os.path.join(write_file_dir, case_id, write_dir, "E3.nrrd"), E3_full, case_imgs["VWI_post_masked_vent"][1])
+        for file_name, np_image in write_list.items():
+            path_test = os.path.join(write_file_dir, case_id, write_dir, file_name)
+            
+            if ( not os.path.exists(path_test) or overwrite_out == True):
+                nrrd.write(path_test, np_image, case_imgs["VWI_post_masked_vent"][1])
+
+        #nrrd.write(os.path.join(write_file_dir, case_id, write_dir, "E.nrrd"), E_full, case_imgs["VWI_post_masked_vent"][1])
+        #nrrd.write(os.path.join(write_file_dir, case_id, write_dir, "E1.nrrd"), E1_full, case_imgs["VWI_post_masked_vent"][1])
+        #nrrd.write(os.path.join(write_file_dir, case_id, write_dir, "E2.nrrd"), E2_full, case_imgs["VWI_post_masked_vent"][1])
+        #nrrd.write(os.path.join(write_file_dir, case_id, write_dir, "E3.nrrd"), E3_full, case_imgs["VWI_post_masked_vent"][1])
+        #nrrd.write(os.path.join(write_file_dir, case_id, write_dir, "E4.nrrd"), E4_full, case_imgs["VWI_post_masked_vent"][1])
         
-        nrrd.write(os.path.join(write_file_dir, case_id, write_dir, "UE.nrrd"), uE, case_imgs["VWI_post_masked_vent"][1])
-        nrrd.write(os.path.join(write_file_dir, case_id, write_dir, "UE1.nrrd"), uE1, case_imgs["VWI_post_masked_vent"][1])
-        nrrd.write(os.path.join(write_file_dir, case_id, write_dir, "UE2.nrrd"), uE2, case_imgs["VWI_post_masked_vent"][1])
-        nrrd.write(os.path.join(write_file_dir, case_id, write_dir, "UE3.nrrd"), uE3, case_imgs["VWI_post_masked_vent"][1])
+        #nrrd.write(os.path.join(write_file_dir, case_id, write_dir, "UE.nrrd"), uE, case_imgs["VWI_post_masked_vent"][1])
+        #nrrd.write(os.path.join(write_file_dir, case_id, write_dir, "UE1.nrrd"), uE1, case_imgs["VWI_post_masked_vent"][1])
+        #nrrd.write(os.path.join(write_file_dir, case_id, write_dir, "UE2.nrrd"), uE2, case_imgs["VWI_post_masked_vent"][1])
+        #nrrd.write(os.path.join(write_file_dir, case_id, write_dir, "UE3.nrrd"), uE3, case_imgs["VWI_post_masked_vent"][1])
+        #nrrd.write(os.path.join(write_file_dir, case_id, write_dir, "UE4.nrrd"), uE4, case_imgs["VWI_post_masked_vent"][1])
         
-        #nrrd.write(os.path.join(write_file_dir, write_dir, "E4.nrrd"), E4_full, case_imgs["VWI_post_masked_vent"][1])
+        #nrrd.write(os.path.join(write_file_dir, case_id, write_dir, "E_thresh.nrrd"), E_thresh, case_imgs["VWI_post_masked_vent"][1])
+        #nrrd.write(os.path.join(write_file_dir, case_id, write_dir, "E1_thresh.nrrd"), E1_thresh, case_imgs["VWI_post_masked_vent"][1])
+        #nrrd.write(os.path.join(write_file_dir, case_id, write_dir, "E2_thresh.nrrd"), E2_thresh, case_imgs["VWI_post_masked_vent"][1])
+        #nrrd.write(os.path.join(write_file_dir, case_id, write_dir, "E3_thresh.nrrd"), E3_thresh, case_imgs["VWI_post_masked_vent"][1])
+        #nrrd.write(os.path.join(write_file_dir, case_id, write_dir, "E4_thresh.nrrd"), E4_thresh, case_imgs["VWI_post_masked_vent"][1])
+
+
+    if (skip_bootstrap):
+        pass
+    else:
+        boot_size = 10000
+        n_bins = 30
+        pre_dist_std = np.zeros(boot_size)
+        post_dist_std = np.zeros(boot_size)
+        pre_dist_mean = np.zeros(boot_size)
+        post_dist_mean = np.zeros(boot_size)
+
+        for i in range(boot_size):
+            X_resample_pre, ns = bootstrap_resample(img_pre_vent, n=None, percent=percent_boot)
+            X_resample_post, ns = bootstrap_resample(img_post_vent, n=None, percent=percent_boot)
+            pre_dist_std[i] =  X_resample_pre.std()
+            post_dist_std[i] = X_resample_post.std()
+            pre_dist_mean[i] =  X_resample_pre.mean()
+            post_dist_mean[i] = X_resample_post.mean()
+        #print( 'original mean:', X.mean()
+        #print(case_id, "post vent resample MEAN: {0:.4f} pre vent resample MEAN {1:.4f}".format(
+        #    X_resample_pre.mean() , X_resample_post.mean() ))
         
+        print ("ha")
+        gs = plt.GridSpec(3,2, wspace=0.2, hspace=0.8) 
+        # Create a figure
+        fig = plt.figure(figsize=(13, 13))
+
+        # SUBFIGURE 1
+        # Create subfigure 1 (takes over two rows (0 to 1) and column 0 of the grid)
+        ax1 = fig.add_subplot(gs[0, 0])
+        ax1.set_title("{0}: VWI_pre_masked_vent bootstrap".format(case_id), fontsize = font_size)
+        ax2 = fig.add_subplot(gs[0, 1])
+        ax2.set_title("VWI_post_masked_vent bootstrap", fontsize = font_size)
+
+        ax3 = fig.add_subplot(gs[1, 0])
+        ax3.set_title(r'$E = post-pre$ bootstrap', fontsize = font_size)
+        ax4 = fig.add_subplot(gs[1, 1])
+        ax4.set_title(r'$E_1 = \frac{\overline{pre}_{vent}}{\overline{post}_{vent}} post - pre$', fontsize = font_size)
+
+        ax5 = fig.add_subplot(gs[2, 0])
+        ax5.set_title(r'$E_2 = \frac{post}{\overline{post}_{vent}} - \frac{pre}{\overline{pre}_{vent}}$', fontsize = font_size)
+
+        ax6 = fig.add_subplot(gs[2, 1])
+        ax6.set_title(r'$E_3 = \frac{post - \overline{post}_{vent}}{s_{post_{vent}}} - \frac{pre - \overline{pre}_{vent}}{s_{pre_{vent}}}$', fontsize = font_size)
+
+
+        ax1.hist(pre_dist_mean, bins=n_bins)
+        ax1.axvline(x=xi_vent, color='r')
+        ax1.set_xlabel("mean", fontsize = font_size)
+        ax1.set_ylabel("count", fontsize = font_size)
         
-        nrrd.write(os.path.join(write_file_dir, case_id, write_dir, "E_thresh.nrrd"), E_thresh, case_imgs["VWI_post_masked_vent"][1])
-        nrrd.write(os.path.join(write_file_dir, case_id, write_dir, "E1_thresh.nrrd"), E1_thresh, case_imgs["VWI_post_masked_vent"][1])
-        nrrd.write(os.path.join(write_file_dir, case_id, write_dir, "E2_thresh.nrrd"), E2_thresh, case_imgs["VWI_post_masked_vent"][1])
-        nrrd.write(os.path.join(write_file_dir, case_id, write_dir, "E3_thresh.nrrd"), E3_thresh, case_imgs["VWI_post_masked_vent"][1])
+        ax2.hist(post_dist_mean, bins=n_bins)
+        ax2.axvline(x=eta_vent, color='r')
+        ax2.set_xlabel("mean ", fontsize = font_size)
+        ax2.set_ylabel("count", fontsize = font_size)
 
+        test_E = VWI_Enhancement(post_dist_mean, pre_dist_mean, 1.0, 1.0, kind = "E1")
+        ax3.hist(test_E, bins=n_bins)
+        ax3.axvline(x=(eta_vent - xi_vent), color='r')
+        #ax3.axvline(x=test_E.mean(), color='b')
+        ax3.set_xlabel("mean E", fontsize = font_size)
+        ax3.set_ylabel("count", fontsize = font_size)
 
+        test_E1 = VWI_Enhancement(post_dist_mean, pre_dist_mean, eta_vent, xi_vent, kind = "E1")
+        ax4.hist(test_E1, bins=n_bins)
+        ax4.axvline(x=0.0, color='r')
+        #ax4.axvline(x=xi_vent/eta_vent*post_dist_mean.mean() - pre_dist_mean.mean(), color='r')
+        #ax4.axvline(x=test_E1.mean(), color='b')
+        ax4.set_xlabel("mean E1", fontsize = font_size)
+        ax4.set_ylabel("count", fontsize = font_size)
 
-    boot_size = 10000
-    n_bins = 30
-    pre_dist_std = np.zeros(boot_size)
-    post_dist_std = np.zeros(boot_size)
-    pre_dist_mean = np.zeros(boot_size)
-    post_dist_mean = np.zeros(boot_size)
+        test_E2 = VWI_Enhancement(post_dist_mean, pre_dist_mean, eta_vent, xi_vent, kind = "E2")
+        ax5.hist(test_E2, bins=n_bins)
+        ax5.axvline(x=0.0, color='r')
+        #ax5.axvline(x=(post_dist_mean.mean() / eta_vent)  - (pre_dist_mean.mean() / xi_vent), color='r')
+        #ax5.axvline(x=test_E2.mean(), color='b')
+        ax5.set_xlabel("mean E2", fontsize = font_size)
+        ax5.set_ylabel("count", fontsize = font_size)
 
-    for i in range(boot_size):
-        X_resample_pre, ns = bootstrap_resample(img_pre_vent, n=None, percent=percent_boot)
-        X_resample_post, ns = bootstrap_resample(img_post_vent, n=None, percent=percent_boot)
-        pre_dist_std[i] =  X_resample_pre.std()
-        post_dist_std[i] = X_resample_post.std()
-        pre_dist_mean[i] =  X_resample_pre.mean()
-        post_dist_mean[i] = X_resample_post.mean()
-    #print( 'original mean:', X.mean()
-    #print(case_id, "post vent resample MEAN: {0:.4f} pre vent resample MEAN {1:.4f}".format(
-    #    X_resample_pre.mean() , X_resample_post.mean() ))
-    
-    print ("ha")
-    gs = plt.GridSpec(3,2, wspace=0.2, hspace=0.8) 
-    # Create a figure
-    fig = plt.figure(figsize=(13, 13))
+        test_E3 = VWI_Enhancement(post_dist_mean, pre_dist_mean, eta_vent, xi_vent, kind = "E3",
+                        std_post_vent = post_dist_std, std_pre_vent = pre_dist_std)
+        ax6.hist(test_E3, bins=n_bins)
+        ax6.axvline(x=0.0 , color='r')
+        #ax6.axvline(x=(post_dist_mean.mean() - eta_vent) /  post_dist_std.mean() - (pre_dist_mean.mean() - xi_vent) / pre_dist_std.mean() , color='b')
+        ax6.set_xlabel("mean E3", fontsize = font_size)
+        ax6.set_ylabel("count", fontsize = font_size)
 
-    # SUBFIGURE 1
-    # Create subfigure 1 (takes over two rows (0 to 1) and column 0 of the grid)
-    ax1 = fig.add_subplot(gs[0, 0])
-    ax1.set_title("{0}: VWI_pre_masked_vent bootstrap".format(case_id), fontsize = font_size)
-    ax2 = fig.add_subplot(gs[0, 1])
-    ax2.set_title("VWI_post_masked_vent bootstrap", fontsize = font_size)
-
-    ax3 = fig.add_subplot(gs[1, 0])
-    ax3.set_title(r'$E = post-pre$ bootstrap', fontsize = font_size)
-    ax4 = fig.add_subplot(gs[1, 1])
-    ax4.set_title(r'$E_1 = \frac{\overline{pre}_{vent}}{\overline{post}_{vent}} post - pre$', fontsize = font_size)
-
-    ax5 = fig.add_subplot(gs[2, 0])
-    ax5.set_title(r'$E_2 = \frac{post}{\overline{post}_{vent}} - \frac{pre}{\overline{pre}_{vent}}$', fontsize = font_size)
-
-    ax6 = fig.add_subplot(gs[2, 1])
-    ax6.set_title(r'$E_3 = \frac{post - \overline{post}_{vent}}{s_{post_{vent}}} - \frac{pre - \overline{pre}_{vent}}{s_{pre_{vent}}}$', fontsize = font_size)
-
-
-    ax1.hist(pre_dist_mean, bins=n_bins)
-    ax1.axvline(x=xi_vent, color='r')
-    ax1.set_xlabel("mean", fontsize = font_size)
-    ax1.set_ylabel("count", fontsize = font_size)
-    
-    ax2.hist(post_dist_mean, bins=n_bins)
-    ax2.axvline(x=eta_vent, color='r')
-    ax2.set_xlabel("mean ", fontsize = font_size)
-    ax2.set_ylabel("count", fontsize = font_size)
-
-    test_E = VWI_Enhancement(post_dist_mean, pre_dist_mean, 1.0, 1.0, kind = "E1")
-    ax3.hist(test_E, bins=n_bins)
-    ax3.axvline(x=(eta_vent - xi_vent), color='r')
-    #ax3.axvline(x=test_E.mean(), color='b')
-    ax3.set_xlabel("mean E", fontsize = font_size)
-    ax3.set_ylabel("count", fontsize = font_size)
-
-    test_E1 = VWI_Enhancement(post_dist_mean, pre_dist_mean, eta_vent, xi_vent, kind = "E1")
-    ax4.hist(test_E1, bins=n_bins)
-    ax4.axvline(x=0.0, color='r')
-    #ax4.axvline(x=xi_vent/eta_vent*post_dist_mean.mean() - pre_dist_mean.mean(), color='r')
-    #ax4.axvline(x=test_E1.mean(), color='b')
-    ax4.set_xlabel("mean E1", fontsize = font_size)
-    ax4.set_ylabel("count", fontsize = font_size)
-
-    test_E2 = VWI_Enhancement(post_dist_mean, pre_dist_mean, eta_vent, xi_vent, kind = "E2")
-    ax5.hist(test_E2, bins=n_bins)
-    ax5.axvline(x=0.0, color='r')
-    #ax5.axvline(x=(post_dist_mean.mean() / eta_vent)  - (pre_dist_mean.mean() / xi_vent), color='r')
-    #ax5.axvline(x=test_E2.mean(), color='b')
-    ax5.set_xlabel("mean E2", fontsize = font_size)
-    ax5.set_ylabel("count", fontsize = font_size)
-
-    test_E3 = VWI_Enhancement(post_dist_mean, pre_dist_mean, eta_vent, xi_vent, kind = "E3",
-                    std_post_vent = post_dist_std, std_pre_vent = pre_dist_std)
-    ax6.hist(test_E3, bins=n_bins)
-    ax6.axvline(x=0.0 , color='r')
-    #ax6.axvline(x=(post_dist_mean.mean() - eta_vent) /  post_dist_std.mean() - (pre_dist_mean.mean() - xi_vent) / pre_dist_std.mean() , color='b')
-    ax6.set_xlabel("mean E3", fontsize = font_size)
-    ax6.set_ylabel("count", fontsize = font_size)
-
-    path_bootstrap = os.path.join(write_file_dir, case_id, plots_dir, "Compare_bootstrap.png")
-    bootstrap_fig_list.append(path_bootstrap)
-    fig.savefig(path_bootstrap)
-    #plt.show()
-    del fig
-    print("hehe")
+        path_bootstrap = os.path.join(write_file_dir, case_id, plots_dir, "Compare_bootstrap.png")
+        bootstrap_fig_list.append(path_bootstrap)
+        fig.savefig(path_bootstrap)
+        #plt.show()
+        del fig
+        print("hehe")
         
 print("hooray")
 print(image_path_list)
