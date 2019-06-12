@@ -252,6 +252,9 @@ def distance_function(data,  metric="default", normalize=None):
     elif(metric == "additivechi2"):
         res = metrics.pairwise.additive_chi2_kernel(np.atleast_2d(hista), np.atleast_2d(histb))
         dist = res[0][0]
+    elif(metric == "chi2_kernel"):
+        res = metrics.pairwise.chi2_kernel(np.atleast_2d(hista), np.atleast_2d(histb))
+        dist = res[0][0]
     elif(metric == "MPDA"):
         dist = minimum_difference_pair_assignments(hista, histb)
     else:
@@ -284,7 +287,7 @@ font_size = 20
 distance_features = ["manhattan", "euclidean", "nonintersection", "bhattacharyya",
                                   "matusita",   "meandistance", "averagedistance",
                                   "jensenshannon", "correlation", "braycurtis",  "hellinger", "wasserstein",
-                                  "energy", "kolmogorovsmirnov", "additivechi2", "MPDA"
+                                  "energy", "kolmogorovsmirnov", "additivechi2", "chi2_kernel", "MPDA"
                                   ] #  "nearestneighbor", "furthestneighbor", "kullbackleiber",
 
 #distance_features = ["euclidean", "jensenshannon", "correlation", "bhattacharyya"
@@ -360,8 +363,10 @@ for case_id, paths in data.items():
     xi_model = xi_model[xi_model >= 0.0]
     
 
-    eta_PI = case_imgs["VWI_post_PI_masked"][0][case_imgs["VWI_post_PI_masked"][0] >= 0.0]
-    xi_PI = case_imgs["VWI_pre2post_PI_masked"][0][case_imgs["VWI_pre2post_PI_masked"][0] >= 0.0]
+    eta_PI = nrrd.read(paths["VWI_post_PI_masked"])[0]
+    eta_PI = eta_PI[eta_PI >= 0.0]
+    xi_PI = nrrd.read(paths["VWI_pre2post_PI_masked"])[0]
+    xi_PI = xi_PI[xi_PI >= 0.0]
     
     #back_std_xi = np.std(img_pre_back) 
     #back_std_eta = np.std(img_post_back)
@@ -471,7 +476,7 @@ for case_id, paths in data.items():
                                     (E1_post_model_hist, E1_pre_model_hist, E1_post_model, E1_pre_model ),
                                     (E2_post_model_hist, E2_pre_model_hist, E2_post_model, E2_pre_model),
                                     (E3_post_model_hist, E3_pre_model_hist, E3_post_model, E3_pre_model),
-                                    (E4_post_model_hist, E4_pre_model_hist, E4_post_model, E4_pre_model)]
+                                    (E4_post_model_hist, E4_pre_model_hist, E4_post_model, E4_pre_model)],
                         "Pituitary_Infundibulum":  [(E_post_PI_hist, E_pre_PI_hist, E_post_PI, E_pre_PI),
                                     (E1_post_PI_hist, E1_pre_PI_hist, E1_post_PI, E1_pre_PI ),
                                     (E2_post_PI_hist, E2_pre_PI_hist, E2_post_PI, E2_pre_PI),

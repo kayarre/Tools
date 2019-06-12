@@ -14,7 +14,8 @@ from sklearn.model_selection import GridSearchCV
 
 
 #from dask.distributed import Client
-#client = Client('128.95.165.220:8786')
+#client = Client('128.95.156.220:8785')
+
 #import joblib
 
 import matplotlib.pyplot as plt
@@ -121,7 +122,7 @@ def newton_koay(r, N, iterations=500, tolerance = 1.0E-9):
     @param tolerance the numerical tolerance of the newton iterations
     """
     #
-    #https://www.sciencedirect.com/science/article/pii/S109078070600019X/
+    #https://www.sciencedirect.com/science/article/pii/S109078070500019X/
     it_default = np.copy(iterations)
     lb = lower_bound(N)
     if (np.isscalar(r)):
@@ -291,23 +292,29 @@ def uncertainty(eta, xi,  conf=2.0, kind = 'E'):
         raise  Exception("undefined enhancement kind {0}".format(kind))
 
 
-def kernel_fit(data, min_size=20):
+def kernel_fit(data, min_size=20, cross_v=2, n_jobs_def= 22):
     """ guassian fit to 1D data
     """
     res = np.histogram(data.ravel(), bins='sqrt', density=True)
     std_data = data.std()
+    bw = (data.ravel().shape[0] * (std_data+ 2) / 4.)**(-1. / (std_data + 4))
+    bw_test = np.geomspace(bw/4.0, std_data, 20, endpoint=True)  # np.linspace(bw/2.0, std_data, 3) 
+
+    
+   
     N_bins = res[1].shape[0]
     if (N_bins < min_size):
         extra = 0.2
     else:
         extra = 0.0
     # get plus or minus 20%
+    
     x_grid = np.linspace(res[1][0]-extra*abs(res[1][0]), res[1][-1] + extra*abs(res[1][0]), N_bins)
     
-    #n_jobs_def=20
     grid = GridSearchCV(KernelDensity(kernel='gaussian'),
-                    {'bandwidth': np.linspace(0.1, std_data, 11)},
-                    cv=5) # 20-fold cross-validation
+                    {'bandwidth': bw_test},
+                    cv=cross_v,
+                    n_jobs=n_jobs_def) # 5-fold cross-validation
     
     #with joblib.parallel_backend('dask', n_jobs=n_jobs_def):
     grid.fit(data.ravel()[:, None])
@@ -316,8 +323,33 @@ def kernel_fit(data, min_size=20):
     kde = grid.best_estimator_
     pdf = np.exp(kde.score_samples(x_grid[:, None]))
     
-    return pdf, x_grid
+    return pdf, x_grid, grid.best_params_
 
+
+def kernel_fit_single(data, bw=None, min_size=20, kern='gaussian'):
+    """ guassian fit to 1D data
+    """
+    res = np.histogram(data.ravel(), bins='sqrt', density=True)
+    std_data = data.std()
+    if (bw == None):
+        bw = (data.ravel().shape[0] * (std_data+ 2) / 4.)**(-1. / (std_data + 4))
+ 
+    N_bins = res[1].shape[0]
+    if (N_bins < min_size):
+        extra = 0.2
+        #N_bins *=2
+    else:
+        extra = 0.0
+    # get plus or minus 20%
+    
+    x_grid = np.linspace(res[1][0]-extra*abs(res[1][0]), res[1][-1] + extra*abs(res[1][0]), N_bins)
+    
+    kde = KernelDensity(bandwidth=bw, kernel=kern)
+    kde.fit(data.ravel()[:, None])
+
+    pdf = np.exp(kde.score_samples(x_grid[:, None]))
+    
+    return pdf, x_grid
 
 '''
 A matplotlib-based function to overplot an elliptical error contour from the covariance matrix.
@@ -325,7 +357,7 @@ Copyright 2017 Megan Bedell (Flatiron).
 Citations: Joe Kington (https://github.com/joferkington/oost_paper_code/blob/master/error_ellipse.py),
            Vincent Spruyt (http://www.visiondummy.com/2014/04/draw-error-ellipse-representing-covariance-matrix/)
 '''
-def error_ellipse(ax, xc, yc, cov, sigma=1, **kwargs):
+def error_ellipse(ax, xc, yc, cov, label, sigma=1, **kwargs):
     '''
     Plot an error ellipse contour over your data.
     Inputs:
@@ -345,6 +377,8 @@ def error_ellipse(ax, xc, yc, cov, sigma=1, **kwargs):
                     height=2.*sigma*np.sqrt(w[1]),
                     angle=theta, **kwargs)
     ellipse.set_facecolor('none')
+    if (label != None):
+        ellipse.set_label(label)
     ax.add_artist(ellipse)
 
 def covariance_mat(A, B):
@@ -380,6 +414,7 @@ json_file = "/home/sansomk/caseFiles/mri/VWI_proj/step3_normalization.json"
 pickle_file = "/home/sansomk/caseFiles/mri/VWI_proj/step3_pickle.pkl"
 
 enhancement_file = "enhancement_pickle.pkl"
+bw_file = "bw_pickle.pkl"
 write_file_dir = "/home/sansomk/caseFiles/mri/VWI_proj"
 write_dir = "VWI_analysis"
 plots_dir = "plots"
@@ -464,7 +499,7 @@ else:
       
     
 
-#test = np.linspace(1,64,64, dtype=np.int)
+#test = np.linspace(1,54,54, dtype=np.int)
 #lb_test = lower_bound(test)
 #plt.plot(test, lb_test)
 #plt.show()
@@ -480,6 +515,7 @@ label_list = []
 average_list = []
 
 uncertainty_list = []
+params_list = {}
 
 
 prop_cycle = plt.rcParams['axes.prop_cycle']
@@ -520,48 +556,92 @@ ax15_8.set_xlabel('Intensity Values',   fontsize = font_size)
 
 
 # create a plot of all the pre vs post
+gs6 = plt.GridSpec(6,3, wspace=0.2, hspace=0.6)
+fig6 = plt.figure(figsize=(13, 17))
+ax1_6 = fig6.add_subplot(gs6[0, 0])
+ax1_6.set_title("Compare Ventricle Pre- vs. Post-VWI", fontsize = font_size)
+ax1_6.set_ylabel(r'Post: $E_0$', fontsize = font_size)
+ax1_6.set_xlabel(r'Pre: $E_0$', fontsize = font_size)
+ax2_6 = fig6.add_subplot(gs6[1, 0])
+ax2_6.set_ylabel(r'Post: $E_1$', fontsize = font_size)
+ax2_6.set_xlabel(r'Pre: $E_1$', fontsize = font_size)
+ax3_6 = fig6.add_subplot(gs6[2, 0])
+ax3_6.set_ylabel(r'Post: $E_2$', fontsize = font_size)
+ax3_6.set_xlabel(r'Pre: $E_2$', fontsize = font_size)
+ax4_6 = fig6.add_subplot(gs6[3, 0])
+ax4_6.set_ylabel(r'Post: $E_3$', fontsize = font_size)
+ax4_6.set_xlabel(r'Pre: $E_3$', fontsize = font_size)
+ax5_6 = fig6.add_subplot(gs6[4, 0])
+ax5_6.set_ylabel(r'Post: $E_4$', fontsize = font_size)
+ax5_6.set_xlabel(r'Pre: $E_4$',   fontsize = font_size)
+
+ax6_6 = fig6.add_subplot(gs6[0, 1])
+ax6_6.set_title("Compare Wall Pre- vs. Post-VWI", fontsize = font_size)
+ax6_6.set_xlabel(r'Pre: $E_0$', fontsize = font_size)
+ax7_6 = fig6.add_subplot(gs6[1, 1])
+ax7_6.set_xlabel(r'Pre: $E_1$', fontsize = font_size)
+ax8_6 = fig6.add_subplot(gs6[2, 1])
+ax8_6.set_xlabel(r'Pre: $E_2$', fontsize = font_size)
+ax9_6 = fig6.add_subplot(gs6[3, 1])
+ax9_6.set_xlabel(r'Pre: $E_3$', fontsize = font_size)
+ax10_6 = fig6.add_subplot(gs6[4, 1])
+ax10_6.set_xlabel(r'Pre: $E_4$',   fontsize = font_size)
+
+ax11_6 = fig6.add_subplot(gs6[0, 2])
+ax11_6.set_title("Compare Pituitary Infundibulum Pre- vs. Post-VWI", fontsize = font_size)
+ax11_6.set_xlabel(r'Pre: $E_0$', fontsize = font_size)
+ax12_6 = fig6.add_subplot(gs6[1, 2])
+ax12_6.set_xlabel(r'Pre: $E_1$', fontsize = font_size)
+ax13_6 = fig6.add_subplot(gs6[2, 2])
+ax13_6.set_xlabel(r'Pre: $E_2$', fontsize = font_size)
+ax14_6 = fig6.add_subplot(gs6[3, 2])
+ax14_6.set_xlabel(r'Pre: $E_3$', fontsize = font_size)
+ax15_6 = fig6.add_subplot(gs6[4, 2])
+ax15_6.set_xlabel(r'Pre: $E_4$',   fontsize = font_size)
+
+# create a plot of all the pre vs post
 gs5 = plt.GridSpec(5,3, wspace=0.2, hspace=0.5)
 fig5 = plt.figure(figsize=(13, 17))
 ax1_5 = fig5.add_subplot(gs5[0, 0])
-ax1_5.set_title("Compare Ventricle histograms", fontsize = font_size)
-ax1_5.set_ylabel(r'post: $E_0$', fontsize = font_size)
-ax1_5.set_xlabel(r'pre: $E_0$', fontsize = font_size)
+ax1_5.set_title("Compare Ventricle Pre- vs. Post-VWI", fontsize = font_size)
+ax1_5.set_ylabel(r'Post: $E_0$', fontsize = font_size)
+ax1_5.set_xlabel(r'Pre: $E_0$', fontsize = font_size)
 ax2_5 = fig5.add_subplot(gs5[1, 0])
-ax2_5.set_ylabel(r'post: $E_1$', fontsize = font_size)
-ax2_5.set_xlabel(r'pre: $E_1$', fontsize = font_size)
+ax2_5.set_ylabel(r'Post: $E_1$', fontsize = font_size)
+ax2_5.set_xlabel(r'Pre: $E_1$', fontsize = font_size)
 ax3_5 = fig5.add_subplot(gs5[2, 0])
-ax3_5.set_ylabel(r'post: $E_2$', fontsize = font_size)
-ax3_5.set_xlabel(r'pre: $E_2$', fontsize = font_size)
+ax3_5.set_ylabel(r'Post: $E_2$', fontsize = font_size)
+ax3_5.set_xlabel(r'Pre: $E_2$', fontsize = font_size)
 ax4_5 = fig5.add_subplot(gs5[3, 0])
-ax4_5.set_ylabel(r'post: $E_3$', fontsize = font_size)
-ax4_5.set_xlabel(r'pre: $E_3$', fontsize = font_size)
+ax4_5.set_ylabel(r'Post: $E_3$', fontsize = font_size)
+ax4_5.set_xlabel(r'Pre: $E_3$', fontsize = font_size)
 ax5_5 = fig5.add_subplot(gs5[4, 0])
-ax5_5.set_ylabel(r'post: $E_4$', fontsize = font_size)
-ax5_5.set_xlabel(r'pre: $E_4$',   fontsize = font_size)
+ax5_5.set_ylabel(r'Post: $E_4$', fontsize = font_size)
+ax5_5.set_xlabel(r'Pre: $E_4$',   fontsize = font_size)
 
 ax6_5 = fig5.add_subplot(gs5[0, 1])
-ax6_5.set_title("Compare Wall  histograms", fontsize = font_size)
-ax6_5.set_xlabel(r'pre: $E_0$', fontsize = font_size)
+ax6_5.set_title("Compare Wall Pre- vs. Post-VWI", fontsize = font_size)
+ax6_5.set_xlabel(r'Pre: $E_0$', fontsize = font_size)
 ax7_5 = fig5.add_subplot(gs5[1, 1])
-ax7_5.set_xlabel(r'pre: $E_1$', fontsize = font_size)
+ax7_5.set_xlabel(r'Pre: $E_1$', fontsize = font_size)
 ax8_5 = fig5.add_subplot(gs5[2, 1])
-ax8_5.set_xlabel(r'pre: $E_2$', fontsize = font_size)
+ax8_5.set_xlabel(r'Pre: $E_2$', fontsize = font_size)
 ax9_5 = fig5.add_subplot(gs5[3, 1])
-ax9_5.set_xlabel(r'pre: $E_3$', fontsize = font_size)
+ax9_5.set_xlabel(r'Pre: $E_3$', fontsize = font_size)
 ax10_5 = fig5.add_subplot(gs5[4, 1])
-ax10_5.set_xlabel(r'pre: $E_4$',   fontsize = font_size)
+ax10_5.set_xlabel(r'Pre: $E_4$',   fontsize = font_size)
 
 ax11_5 = fig5.add_subplot(gs5[0, 2])
-ax11_5.set_title("Compare Pituitary Infundibulum histograms", fontsize = font_size)
-ax11_5.set_xlabel(r'pre: $E_0$', fontsize = font_size)
+ax11_5.set_title("Compare Pituitary Infundibulum Pre- vs. Post-VWI", fontsize = font_size)
+ax11_5.set_xlabel(r'Pre: $E_0$', fontsize = font_size)
 ax12_5 = fig5.add_subplot(gs5[1, 2])
-ax12_5.set_xlabel(r'pre: $E_1$', fontsize = font_size)
+ax12_5.set_xlabel(r'Pre: $E_1$', fontsize = font_size)
 ax13_5 = fig5.add_subplot(gs5[2, 2])
-ax13_5.set_xlabel(r'pre: $E_2$', fontsize = font_size)
+ax13_5.set_xlabel(r'Pre: $E_2$', fontsize = font_size)
 ax14_5 = fig5.add_subplot(gs5[3, 2])
-ax14_5.set_xlabel(r'pre: $E_3$', fontsize = font_size)
+ax14_5.set_xlabel(r'Pre: $E_3$', fontsize = font_size)
 ax15_5 = fig5.add_subplot(gs5[4, 2])
-ax15_5.set_xlabel(r'pre: $E_4$',   fontsize = font_size)
+ax15_5.set_xlabel(r'Pre: $E_4$',   fontsize = font_size)
 
 
 for case_id, case_imgs  in image_dict.items():
@@ -629,19 +709,19 @@ for case_id, case_imgs  in image_dict.items():
     E = VWI_Enhancement(eta, xi, 1.0, 1.0, kind = "E1")
     case_id_list.append(case_id)
     e_type_list.append("E")
-    label_list.append("volume")
+    label_list.append("Volume")
     average_list.append(E.mean())
     
     E1 = VWI_Enhancement(eta, xi, eta_vent, xi_vent, kind = "E1")
     case_id_list.append(case_id)
     e_type_list.append("E1")
-    label_list.append("volume")
+    label_list.append("Volume")
     average_list.append(E1.mean())
     
     E2 = VWI_Enhancement(eta, xi, eta_vent, xi_vent, kind = "E2")
     case_id_list.append(case_id)
     e_type_list.append("E2")
-    label_list.append("volume")
+    label_list.append("Volume")
     average_list.append(E2.mean())
     
     E3 = VWI_Enhancement(eta, xi, eta_vent, xi_vent, kind = "E3",
@@ -649,7 +729,7 @@ for case_id, case_imgs  in image_dict.items():
                                                         std_pre_vent = np.sqrt(u_xi_vent_2))
     case_id_list.append(case_id)
     e_type_list.append("E3")
-    label_list.append("volume")
+    label_list.append("Volume")
     average_list.append(E3.mean())
     
     E4 = VWI_Enhancement(eta, xi, eta_vent, xi_vent, kind = "E4",
@@ -657,7 +737,7 @@ for case_id, case_imgs  in image_dict.items():
                                                         std_pre_vent = np.sqrt(u_xi_vent_2))
     case_id_list.append(case_id)
     e_type_list.append("E4")
-    label_list.append("volume")
+    label_list.append("Volume")
     average_list.append(E4.mean())
     
     
@@ -665,21 +745,21 @@ for case_id, case_imgs  in image_dict.items():
                                                            1.0, 1.0, kind = "E1", return_parts=True)
     case_id_list.append(case_id)
     e_type_list.append("E")
-    label_list.append("wall")
+    label_list.append("Wall")
     average_list.append(E_model.mean())
                         
     E1_model, E1_post_model, E1_pre_model = VWI_Enhancement(eta_model, xi_model,
                                                             eta_vent, xi_vent, kind = "E1", return_parts=True)
     case_id_list.append(case_id)
     e_type_list.append("E1")
-    label_list.append("wall")
+    label_list.append("Wall")
     average_list.append(E1_model.mean())
     
     E2_model, E2_post_model, E2_pre_model = VWI_Enhancement(eta_model, xi_model,
                                                             eta_vent, xi_vent, kind = "E2", return_parts=True)
     case_id_list.append(case_id)
     e_type_list.append("E2")
-    label_list.append("wall")
+    label_list.append("Wall")
     average_list.append(E2_model.mean())
 
     E3_model, E3_post_model, E3_pre_model = VWI_Enhancement(eta_model, xi_model,
@@ -689,7 +769,7 @@ for case_id, case_imgs  in image_dict.items():
                                                         return_parts=True)
     case_id_list.append(case_id)
     e_type_list.append("E3")
-    label_list.append("wall")
+    label_list.append("Wall")
     average_list.append(E3_model.mean())
     
     E4_model, E4_post_model, E4_pre_model = VWI_Enhancement(eta_model, xi_model,
@@ -699,14 +779,14 @@ for case_id, case_imgs  in image_dict.items():
                                                         return_parts=True)
     case_id_list.append(case_id)
     e_type_list.append("E4")
-    label_list.append("wall")
+    label_list.append("Wall")
     average_list.append(E4_model.mean())
 
     E_vent, E_post_vent, E_pre_vent = VWI_Enhancement(img_post_vent, img_pre_vent,
                                                            1.0, 1.0, kind = "E1", return_parts=True)
     case_id_list.append(case_id)
     e_type_list.append("E")
-    label_list.append("ventricle")
+    label_list.append("Ventricle")
     average_list.append(E_vent.mean())
 
     
@@ -714,14 +794,14 @@ for case_id, case_imgs  in image_dict.items():
                                                             eta_vent, xi_vent, kind = "E1", return_parts=True)
     case_id_list.append(case_id)
     e_type_list.append("E1")
-    label_list.append("ventricle")
+    label_list.append("Ventricle")
     average_list.append(E1_vent.mean())
 
     E2_vent, E2_post_vent, E2_pre_vent  = VWI_Enhancement(img_post_vent, img_pre_vent,
                                                             eta_vent, xi_vent, kind = "E2", return_parts=True)
     case_id_list.append(case_id)
     e_type_list.append("E2")
-    label_list.append("ventricle")
+    label_list.append("Ventricle")
     average_list.append(E2_vent.mean())
 
     E3_vent, E3_post_vent, E3_pre_vent = VWI_Enhancement(img_post_vent, img_pre_vent,
@@ -731,7 +811,7 @@ for case_id, case_imgs  in image_dict.items():
                                                         return_parts=True)
     case_id_list.append(case_id)
     e_type_list.append("E3")
-    label_list.append("ventricle")
+    label_list.append("Ventricle")
     average_list.append(E3_vent.mean())
 
     E4_vent, E4_post_vent, E4_pre_vent = VWI_Enhancement(img_post_vent, img_pre_vent,
@@ -741,7 +821,7 @@ for case_id, case_imgs  in image_dict.items():
                                                         return_parts=True)
     case_id_list.append(case_id)
     e_type_list.append("E4")
-    label_list.append("ventricle")
+    label_list.append("Ventricle")
     average_list.append(E4_vent.mean())
 
 
@@ -833,29 +913,29 @@ for case_id, case_imgs  in image_dict.items():
 
 
     case_id_list.append(case_id)
-    e_type_list.append("post")
-    label_list.append("wall")
+    e_type_list.append("Post")
+    label_list.append("Wall")
     average_list.append(E_post_model.mean())
     case_id_list.append(case_id)
-    e_type_list.append("pre")
-    label_list.append("wall")
+    e_type_list.append("Pre")
+    label_list.append("Wall")
     average_list.append(E_pre_model.mean())
     
     case_id_list.append(case_id)
-    e_type_list.append("post")
-    label_list.append("ventricle")
+    e_type_list.append("Post")
+    label_list.append("Ventricle")
     average_list.append(E_post_model.mean())
     case_id_list.append(case_id)
-    e_type_list.append("pre")
-    label_list.append("ventricle")
+    e_type_list.append("Pre")
+    label_list.append("Ventricle")
     average_list.append(E_pre_vent.mean())
     
     case_id_list.append(case_id)
-    e_type_list.append("post")
+    e_type_list.append("Post")
     label_list.append("Pituitary Infundibulum")
     average_list.append(E_post_PI.mean())
     case_id_list.append(case_id)
-    e_type_list.append("pre")
+    e_type_list.append("Pre")
     label_list.append("Pituitary Infundibulum")
     average_list.append(E_pre_PI.mean())
     
@@ -963,7 +1043,8 @@ for case_id, case_imgs  in image_dict.items():
     plt.close(fig4)
     del fig4
     
-    alpha_4 = 0.4
+    alpha_4 = 0.1
+    alpha_ellipse = 1.0
     #gs5 = plt.GridSpec(1,1, wspace=0.2, hspace=0.8)
     #fig5 = plt.figure(figsize=(13, 13))
     #ax1_5 = fig5.add_subplot(gs5[0, 0])
@@ -978,8 +1059,8 @@ for case_id, case_imgs  in image_dict.items():
                   #E3_post_model.ravel() / E3_post_model.max(), label=r'$\frac{E_3}{max(E_3)}$', alpha=alpha_4)
     #ax1_5.scatter(E4_pre_model.ravel() / E4_pre_model.max(),
                   #E4_post_model.ravel() / E4_post_model.max(), label=r'$\frac{E_4}{max(E_4)}$', alpha=alpha_4)
-    #ax1_5.set_xlabel(r'pre: $E$', fontsize = font_size)
-    #ax1_5.set_ylabel(r'post: $E$', fontsize = font_size)
+    #ax1_5.set_xlabel(r'Pre: $E$', fontsize = font_size)
+    #ax1_5.set_ylabel(r'Post: $E$', fontsize = font_size)
     #ax1_5.legend()
     
     #path_ventricle_model = os.path.join(write_file_dir, case_id, plots_dir, "Compare_Model_normed.png")
@@ -1001,8 +1082,8 @@ for case_id, case_imgs  in image_dict.items():
                   #E3_post_PI.ravel() / E3_post_PI.max(), label=r'$\frac{E_3}{max(E_3)}$', alpha=alpha_4)
     #ax1_6.scatter(E4_pre_PI.ravel() / E4_pre_PI.max(),
                   #E4_post_PI.ravel() / E4_post_PI.max(), label=r'$\frac{E_4}{max(E_4)}$', alpha=alpha_4)
-    #ax1_6.set_xlabel(r'pre: $E$', fontsize = font_size)
-    #ax1_6.set_ylabel(r'post: $E$', fontsize = font_size)
+    #ax1_6.set_xlabel(r'Pre: $E$', fontsize = font_size)
+    #ax1_6.set_ylabel(r'Post: $E$', fontsize = font_size)
     #ax1_6.legend()
     
     #path_ventricle_model = os.path.join(write_file_dir, case_id, plots_dir, "Compare_PI_normed.png")
@@ -1024,8 +1105,8 @@ for case_id, case_imgs  in image_dict.items():
                   #E3_post_vent.ravel() / E3_post_vent.max(), label=r'$\frac{E_3}{max(E_3)}$', alpha=alpha_4)
     #ax1_7.scatter(E4_pre_vent.ravel() / E4_pre_vent.max(),
                   #E4_post_vent.ravel() / E4_post_vent.max(), label=r'$\frac{E_4}{max(E_4)}$', alpha=alpha_4)
-    #ax1_7.set_xlabel(r'pre: $E$',   fontsize = font_size)
-    #ax1_7.set_ylabel(r'post: $E$', fontsize = font_size)
+    #ax1_7.set_xlabel(r'Pre: $E$',   fontsize = font_size)
+    #ax1_7.set_ylabel(r'Post: $E$', fontsize = font_size)
     #ax1_7.legend()
     
     #path_ventricle_model = os.path.join(write_file_dir, case_id, plots_dir, "Compare_Ventricle_normed.png")
@@ -1034,74 +1115,154 @@ for case_id, case_imgs  in image_dict.items():
     #del fig7
     
     
-    sc = ax1_5.scatter(E_pre_vent.ravel(), E_post_vent.ravel() ,  label="{0}".format(case_id), alpha=alpha_4)
+    sc = ax1_5.scatter(E_pre_vent.ravel(), E_post_vent.ravel(),  alpha=alpha_4, label="{0}".format(case_id))
     sc_color = sc.get_facecolors()[0].tolist()
-    error_ellipse(ax1_5, E_pre_vent.mean(), E_post_vent.mean(),
-                  covariance_mat(E_pre_vent.ravel(), E_post_vent.ravel()),
-                  alpha=alpha_4, ec = sc_color)
-    ax2_5.scatter(E1_pre_vent.ravel(), E1_post_vent.ravel() ,  label="{0}".format(case_id), alpha=alpha_4, color=sc_color)
-    error_ellipse(ax2_5, E1_pre_vent.mean(), E1_post_vent.mean(),
-                  covariance_mat(E1_pre_vent.ravel(), E1_post_vent.ravel()),
-                  alpha=alpha_4, ec = sc_color)
-    ax3_5.scatter(E2_pre_vent.ravel(), E2_post_vent.ravel() ,  label="{0}".format(case_id), alpha=alpha_4, color=sc_color)
-    error_ellipse(ax3_5, E2_pre_vent.mean(), E2_post_vent.mean(),
-                  covariance_mat(E2_pre_vent.ravel(), E2_post_vent.ravel()),
-                  alpha=alpha_4, ec = sc_color)
-    ax4_5.scatter(E3_pre_vent.ravel(), E3_post_vent.ravel() ,  label="{0}".format(case_id), alpha=alpha_4, color=sc_color)
-    error_ellipse(ax4_5, E3_pre_vent.mean(), E3_post_vent.mean(),
-                  covariance_mat(E3_pre_vent.ravel(), E3_post_vent.ravel()),
-                  alpha=alpha_4, ec = sc_color)
-    ax5_5.scatter(E4_pre_vent.ravel(), E4_post_vent.ravel() ,  label="{0}".format(case_id), alpha=alpha_4, color=sc_color)
-    error_ellipse(ax5_5, E4_pre_vent.mean(), E4_post_vent.mean(),
-                  covariance_mat(E4_pre_vent.ravel(), E4_post_vent.ravel()),
-                  alpha=alpha_4, ec = sc_color)
+    ax2_5.scatter(E1_pre_vent.ravel(), E1_post_vent.ravel() ,   alpha=alpha_4, color=sc_color, label="{0}".format(case_id))
+    ax3_5.scatter(E2_pre_vent.ravel(), E2_post_vent.ravel() ,   alpha=alpha_4, color=sc_color, label="{0}".format(case_id))
+    ax4_5.scatter(E3_pre_vent.ravel(), E3_post_vent.ravel() ,   alpha=alpha_4, color=sc_color, label="{0}".format(case_id))
+    ax5_5.scatter(E4_pre_vent.ravel(), E4_post_vent.ravel() ,   alpha=alpha_4, color=sc_color, label="{0}".format(case_id))
 
-    sc2 =ax6_5.scatter(E_pre_model.ravel(), E_post_model.ravel() ,  label="{0}".format(case_id), alpha=alpha_4)
+    sc2 =ax6_5.scatter(E_pre_model.ravel(), E_post_model.ravel() ,   alpha=alpha_4, label="{0}".format(case_id))
     sc_color2 = sc2.get_facecolors()[0].tolist()
-    error_ellipse(ax6_5, E_pre_model.mean(), E_post_model.mean(),
-                  covariance_mat(E_pre_model.ravel(), E_post_model.ravel()),
-                  alpha=alpha_4, ec = sc_color2)
-    ax7_5.scatter(E1_pre_model.ravel(), E1_post_model.ravel() ,  label="{0}".format(case_id), alpha=alpha_4, color=sc_color2)
-    error_ellipse(ax7_5, E1_pre_model.mean(), E1_post_model.mean(),
-                  covariance_mat(E1_pre_model.ravel(), E1_post_model.ravel()),
-                  alpha=alpha_4, ec = sc_color2)
-    ax8_5.scatter(E2_pre_model.ravel(), E2_post_model.ravel() ,  label="{0}".format(case_id), alpha=alpha_4, color=sc_color2)
-    error_ellipse(ax8_5, E2_pre_model.mean(), E2_post_model.mean(),
-                  covariance_mat(E2_pre_model.ravel(), E2_post_model.ravel()),
-                  alpha=alpha_4, ec = sc_color2)
-    ax9_5.scatter(E3_pre_model.ravel(), E3_post_model.ravel() ,  label="{0}".format(case_id), alpha=alpha_4, color=sc_color2)
-    error_ellipse(ax9_5, E3_pre_model.mean(), E3_post_model.mean(),
-                  covariance_mat(E3_pre_model.ravel(), E3_post_model.ravel()),
-                  alpha=alpha_4, ec = sc_color2)
-    ax10_5.scatter(E4_pre_model.ravel(), E4_post_model.ravel() ,  label="{0}".format(case_id), alpha=alpha_4, color=sc_color2)
-    error_ellipse(ax10_5, E4_pre_model.mean(), E4_post_model.mean(),
-                  covariance_mat(E4_pre_model.ravel(), E4_post_model.ravel()),
-                  alpha=alpha_4, ec = sc_color2)
+    ax7_5.scatter(E1_pre_model.ravel(), E1_post_model.ravel() ,   alpha=alpha_4, color=sc_color2, label="{0}".format(case_id))
+    ax8_5.scatter(E2_pre_model.ravel(), E2_post_model.ravel() ,   alpha=alpha_4, color=sc_color2, label="{0}".format(case_id))
+    ax9_5.scatter(E3_pre_model.ravel(), E3_post_model.ravel() ,   alpha=alpha_4, color=sc_color2, label="{0}".format(case_id))
+    ax10_5.scatter(E4_pre_model.ravel(), E4_post_model.ravel() ,   alpha=alpha_4, color=sc_color2, label="{0}".format(case_id))
 
-    sc3 =ax11_5.scatter(E_pre_PI.ravel(), E_post_PI.ravel() ,  label="{0}".format(case_id), alpha=alpha_4)
+    sc3 =ax11_5.scatter(E_pre_PI.ravel(), E_post_PI.ravel() ,   alpha=alpha_4, label="{0}".format(case_id))
     sc_color3 = sc3.get_facecolors()[0].tolist()
-    error_ellipse(ax11_5, E_pre_PI.mean(), E_post_PI.mean(),
-                  covariance_mat(E_pre_PI.ravel(), E_post_PI.ravel()),
-                  alpha=alpha_4, ec = sc_color3)
-    ax12_5.scatter(E1_pre_PI.ravel(), E1_post_PI.ravel() ,  label="{0}".format(case_id), alpha=alpha_4, color=sc_color3)
-    error_ellipse(ax12_5, E1_pre_PI.mean(), E1_post_PI.mean(),
-                  covariance_mat(E1_pre_PI.ravel(), E1_post_PI.ravel()),
-                  alpha=alpha_4, ec = sc_color3)
-    ax13_5.scatter(E2_pre_PI.ravel(), E2_post_PI.ravel() ,  label="{0}".format(case_id), alpha=alpha_4, color=sc_color3)
-    error_ellipse(ax13_5, E2_pre_PI.mean(), E2_post_PI.mean(),
-                  covariance_mat(E2_pre_PI.ravel(), E2_post_PI.ravel()),
-                  alpha=alpha_4, ec = sc_color3)
-    ax14_5.scatter(E3_pre_PI.ravel(), E3_post_PI.ravel() ,  label="{0}".format(case_id), alpha=alpha_4, color=sc_color3)
-    error_ellipse(ax14_5, E3_pre_PI.mean(), E3_post_PI.mean(),
-                  covariance_mat(E3_pre_PI.ravel(), E3_post_PI.ravel()),
-                  alpha=alpha_4, ec = sc_color3)
-    ax15_5.scatter(E4_pre_PI.ravel(), E4_post_PI.ravel() ,  label="{0}".format(case_id), alpha=alpha_4, color=sc_color3)
-    error_ellipse(ax15_5, E4_pre_PI.mean(), E4_post_PI.mean(),
-                  covariance_mat(E4_pre_PI.ravel(), E4_post_PI.ravel()),
-                  alpha=alpha_4, ec = sc_color3)
+    ax12_5.scatter(E1_pre_PI.ravel(), E1_post_PI.ravel() ,   alpha=alpha_4, color=sc_color3, label="{0}".format(case_id))
+    ax13_5.scatter(E2_pre_PI.ravel(), E2_post_PI.ravel() ,   alpha=alpha_4, color=sc_color3, label="{0}".format(case_id))
+    ax14_5.scatter(E3_pre_PI.ravel(), E3_post_PI.ravel() ,   alpha=alpha_4, color=sc_color3, label="{0}".format(case_id))
+    ax15_5.scatter(E4_pre_PI.ravel(), E4_post_PI.ravel() ,   alpha=alpha_4, color=sc_color3, label="{0}".format(case_id))
+    
+    error_ellipse(ax1_5, E_pre_vent.mean(), E_post_vent.mean(),
+                  covariance_mat(E_pre_vent.ravel(), E_post_vent.ravel()), None,
+                  alpha=alpha_ellipse, ec = sc_color)
+    error_ellipse(ax2_5, E1_pre_vent.mean(), E1_post_vent.mean(),
+                  covariance_mat(E1_pre_vent.ravel(), E1_post_vent.ravel()), None,
+                  alpha=alpha_ellipse, ec = sc_color)
+    error_ellipse(ax3_5, E2_pre_vent.mean(), E2_post_vent.mean(),
+                  covariance_mat(E2_pre_vent.ravel(), E2_post_vent.ravel()), None,
+                  alpha=alpha_ellipse, ec = sc_color)
+    error_ellipse(ax4_5, E3_pre_vent.mean(), E3_post_vent.mean(),
+                  covariance_mat(E3_pre_vent.ravel(), E3_post_vent.ravel()), None,
+                  alpha=alpha_ellipse, ec = sc_color)
 
-    
-    
+    error_ellipse(ax5_5, E4_pre_vent.mean(), E4_post_vent.mean(),
+                  covariance_mat(E4_pre_vent.ravel(), E4_post_vent.ravel()), None,
+                  alpha=alpha_ellipse, ec = sc_color)
+    error_ellipse(ax6_5, E_pre_model.mean(), E_post_model.mean(),
+                  covariance_mat(E_pre_model.ravel(), E_post_model.ravel()), None,
+                  alpha=alpha_ellipse, ec = sc_color2)
+    error_ellipse(ax7_5, E1_pre_model.mean(), E1_post_model.mean(),
+                  covariance_mat(E1_pre_model.ravel(), E1_post_model.ravel()), None,
+                  alpha=alpha_ellipse, ec = sc_color2)
+    error_ellipse(ax8_5, E2_pre_model.mean(), E2_post_model.mean(),
+                  covariance_mat(E2_pre_model.ravel(), E2_post_model.ravel()), None,
+                  alpha=alpha_ellipse, ec = sc_color2)
+    error_ellipse(ax9_5, E3_pre_model.mean(), E3_post_model.mean(),
+                  covariance_mat(E3_pre_model.ravel(), E3_post_model.ravel()),None,
+                  alpha=alpha_ellipse, ec = sc_color2)
+    error_ellipse(ax10_5, E4_pre_model.mean(), E4_post_model.mean(),
+                  covariance_mat(E4_pre_model.ravel(), E4_post_model.ravel()), None,
+                  alpha=alpha_ellipse, ec = sc_color2)
+
+    error_ellipse(ax11_5, E_pre_PI.mean(), E_post_PI.mean(),
+                  covariance_mat(E_pre_PI.ravel(), E_post_PI.ravel()), None,
+                  alpha=alpha_ellipse, ec = sc_color3)
+    error_ellipse(ax12_5, E1_pre_PI.mean(), E1_post_PI.mean(),
+                  covariance_mat(E1_pre_PI.ravel(), E1_post_PI.ravel()), None,
+                  alpha=alpha_ellipse, ec = sc_color3)
+    error_ellipse(ax13_5, E2_pre_PI.mean(), E2_post_PI.mean(),
+                  covariance_mat(E2_pre_PI.ravel(), E2_post_PI.ravel()), None,
+                  alpha=alpha_ellipse, ec = sc_color3)
+    error_ellipse(ax14_5, E3_pre_PI.mean(), E3_post_PI.mean(),
+                  covariance_mat(E3_pre_PI.ravel(), E3_post_PI.ravel()), None,
+                  alpha=alpha_ellipse, ec = sc_color3)
+    error_ellipse(ax15_5, E4_pre_PI.mean(), E4_post_PI.mean(),
+                  covariance_mat(E4_pre_PI.ravel(), E4_post_PI.ravel()),None,
+                  alpha=alpha_ellipse, ec = sc_color3)
+
+
+    error_ellipse(ax1_6, E_pre_vent.mean(), E_post_vent.mean(),
+                  covariance_mat(E_pre_vent.ravel(), E_post_vent.ravel()), case_id,
+                  alpha=alpha_ellipse, ec = sc_color)
+    ax1_6.set_xlim(ax1_5.get_xlim())
+    ax1_6.set_ylim(ax1_5.get_ylim())
+    error_ellipse(ax2_6, E1_pre_vent.mean(), E1_post_vent.mean(),
+                  covariance_mat(E1_pre_vent.ravel(), E1_post_vent.ravel()), case_id,
+                  alpha=alpha_ellipse, ec = sc_color)
+    ax2_6.set_xlim(ax2_5.get_xlim())
+    ax2_6.set_ylim(ax2_5.get_ylim())
+    error_ellipse(ax3_6, E2_pre_vent.mean(), E2_post_vent.mean(),
+                  covariance_mat(E2_pre_vent.ravel(), E2_post_vent.ravel()), case_id,
+                  alpha=alpha_ellipse, ec = sc_color)
+    ax3_6.set_xlim(ax3_5.get_xlim())
+    ax3_6.set_ylim(ax3_5.get_ylim())
+    error_ellipse(ax4_6, E3_pre_vent.mean(), E3_post_vent.mean(),
+                  covariance_mat(E3_pre_vent.ravel(), E3_post_vent.ravel()), case_id,
+                  alpha=alpha_ellipse, ec = sc_color)
+    ax4_6.set_xlim(ax4_5.get_xlim())
+    ax4_6.set_ylim(ax4_5.get_ylim())
+
+    error_ellipse(ax5_6, E4_pre_vent.mean(), E4_post_vent.mean(),
+                  covariance_mat(E4_pre_vent.ravel(), E4_post_vent.ravel()), case_id,
+                  alpha=alpha_ellipse, ec = sc_color)
+    ax5_6.set_xlim(ax5_5.get_xlim())
+    ax5_6.set_ylim(ax5_5.get_ylim())
+    error_ellipse(ax6_6, E_pre_model.mean(), E_post_model.mean(),
+                  covariance_mat(E_pre_model.ravel(), E_post_model.ravel()), case_id,
+                  alpha=alpha_ellipse, ec = sc_color2)
+    ax6_6.set_xlim(ax6_5.get_xlim())
+    ax6_6.set_ylim(ax6_5.get_ylim())
+    error_ellipse(ax7_6, E1_pre_model.mean(), E1_post_model.mean(),
+                  covariance_mat(E1_pre_model.ravel(), E1_post_model.ravel()), case_id,
+                  alpha=alpha_ellipse, ec = sc_color2)
+    ax7_6.set_xlim(ax7_5.get_xlim())
+    ax7_6.set_ylim(ax7_5.get_ylim())
+    error_ellipse(ax8_6, E2_pre_model.mean(), E2_post_model.mean(),
+                  covariance_mat(E2_pre_model.ravel(), E2_post_model.ravel()), case_id,
+                  alpha=alpha_ellipse, ec = sc_color2)
+    ax8_6.set_xlim(ax8_5.get_xlim())
+    ax8_6.set_ylim(ax8_5.get_ylim())
+    error_ellipse(ax9_6, E3_pre_model.mean(), E3_post_model.mean(),
+                  covariance_mat(E3_pre_model.ravel(), E3_post_model.ravel()), case_id,
+                  alpha=alpha_ellipse, ec = sc_color2)
+    ax9_6.set_xlim(ax9_5.get_xlim())
+    ax9_6.set_ylim(ax9_5.get_ylim())
+    error_ellipse(ax10_6, E4_pre_model.mean(), E4_post_model.mean(),
+                  covariance_mat(E4_pre_model.ravel(), E4_post_model.ravel()), case_id,
+                  alpha=alpha_ellipse, ec = sc_color2)
+    ax10_6.set_xlim(ax10_5.get_xlim())
+    ax10_6.set_ylim(ax10_5.get_ylim())
+    error_ellipse(ax11_6, E_pre_PI.mean(), E_post_PI.mean(),
+                  covariance_mat(E_pre_PI.ravel(), E_post_PI.ravel()), case_id,
+                  alpha=alpha_ellipse, ec = sc_color3)
+    ax11_6.set_xlim(ax11_5.get_xlim())
+    ax11_6.set_ylim(ax11_5.get_ylim())
+    error_ellipse(ax12_6, E1_pre_PI.mean(), E1_post_PI.mean(),
+                  covariance_mat(E1_pre_PI.ravel(), E1_post_PI.ravel()), case_id,
+                  alpha=alpha_ellipse, ec = sc_color3)
+    ax12_6.set_xlim(ax12_5.get_xlim())
+    ax12_6.set_ylim(ax12_5.get_ylim())
+    error_ellipse(ax13_6, E2_pre_PI.mean(), E2_post_PI.mean(),
+                  covariance_mat(E2_pre_PI.ravel(), E2_post_PI.ravel()), case_id,
+                  alpha=alpha_ellipse, ec = sc_color3)
+    ax13_6.set_xlim(ax13_5.get_xlim())
+    ax13_6.set_ylim(ax13_5.get_ylim())
+    error_ellipse(ax14_6, E3_pre_PI.mean(), E3_post_PI.mean(),
+                  covariance_mat(E3_pre_PI.ravel(), E3_post_PI.ravel()), case_id,
+                  alpha=alpha_ellipse, ec = sc_color3)
+    ax14_6.set_xlim(ax14_5.get_xlim())
+    ax14_6.set_ylim(ax14_5.get_ylim())
+    error_ellipse(ax15_6, E4_pre_PI.mean(), E4_post_PI.mean(),
+                  covariance_mat(E4_pre_PI.ravel(), E4_post_PI.ravel()), case_id,
+                  alpha=alpha_ellipse, ec = sc_color3)
+    ax15_6.set_xlim(ax15_5.get_xlim())
+    ax15_6.set_ylim(ax15_5.get_ylim())
+
+
     #gs5 = plt.GridSpec(1,1, wspace=0.2, hspace=0.8)
     #fig5 = plt.figure(figsize=(13, 13))
     #ax1_5 = fig5.add_subplot(gs5[0, 0])
@@ -1111,8 +1272,8 @@ for case_id, case_imgs  in image_dict.items():
     #ax1_5.scatter(E2_pre_model.ravel(), E2_post_model.ravel(), label=r'$E_2$', alpha=alpha_4)
     #ax1_5.scatter(E3_pre_model.ravel(), E3_post_model.ravel(), label=r'$E_3$', alpha=alpha_4)
     #ax1_5.scatter(E4_pre_model.ravel(), E4_post_model.ravel(), label=r'$E_4$', alpha=alpha_4)
-    #ax1_5.set_xlabel(r'pre: $E$', fontsize = font_size)
-    #ax1_5.set_ylabel(r'post: $E$', fontsize = font_size)
+    #ax1_5.set_xlabel(r'Pre: $E$', fontsize = font_size)
+    #ax1_5.set_ylabel(r'Post: $E$', fontsize = font_size)
     #ax1_5.legend()
     
     #path_ventricle_model = os.path.join(write_file_dir, case_id, plots_dir, "Compare_Model_data.png")
@@ -1129,8 +1290,8 @@ for case_id, case_imgs  in image_dict.items():
     #ax1_6.scatter(E2_pre_PI.ravel(), E2_post_PI.ravel(), label=r'$E_2$', alpha=alpha_4)
     #ax1_6.scatter(E3_pre_PI.ravel(), E3_post_PI.ravel(), label=r'$E_3$', alpha=alpha_4)
     #ax1_6.scatter(E4_pre_PI.ravel(), E4_post_PI.ravel(), label=r'$E_4$', alpha=alpha_4)
-    #ax1_6.set_xlabel(r'pre: $E$', fontsize = font_size)
-    #ax1_6.set_ylabel(r'post: $E$', fontsize = font_size)
+    #ax1_6.set_xlabel(r'Pre: $E$', fontsize = font_size)
+    #ax1_6.set_ylabel(r'Post: $E$', fontsize = font_size)
     #ax1_6.legend()
     
     #path_ventricle_model = os.path.join(write_file_dir, case_id, plots_dir, "Compare_PI_data.png")
@@ -1147,8 +1308,8 @@ for case_id, case_imgs  in image_dict.items():
     #ax1_7.scatter(E2_pre_vent.ravel(), E2_post_vent.ravel(), label=r'$E_2$', alpha=alpha_4)
     #ax1_7.scatter(E3_pre_vent.ravel(), E3_post_vent.ravel(), label=r'$E_3$', alpha=alpha_4)
     #ax1_7.scatter(E4_pre_vent.ravel(),E4_post_vent.ravel(), label=r'$E_4$', alpha=alpha_4)
-    #ax1_7.set_xlabel(r'pre: $E$',   fontsize = font_size)
-    #ax1_7.set_ylabel(r'post: $E$', fontsize = font_size)
+    #ax1_7.set_xlabel(r'Pre: $E$',   fontsize = font_size)
+    #ax1_7.set_ylabel(r'Post: $E$', fontsize = font_size)
     #ax1_7.legend()
     
     #path_ventricle_model = os.path.join(write_file_dir, case_id, plots_dir, "Compare_Ventricle_data.png")
@@ -1179,8 +1340,8 @@ for case_id, case_imgs  in image_dict.items():
     ax1_z.hist(E2_vent.ravel(), bins='sqrt', label=r'$E_2$', alpha=alpha_4, density=True)
     ax1_z.hist(E3_vent.ravel(), bins='sqrt', label=r'$E_3$', alpha=alpha_4, density=True)
     ax1_z.hist(E4_vent.ravel(), bins='sqrt', label=r'$E_4$', alpha=alpha_4, density=True)
-    #ax1_z.set_xlabel(r'pre: $E$',   fontsize = font_size)
-    #ax1_z.set_ylabel(r'post: $E$', fontsize = font_size)
+    #ax1_z.set_xlabel(r'Pre: $E$',   fontsize = font_size)
+    #ax1_z.set_ylabel(r'Post: $E$', fontsize = font_size)
     #ylims = ax1_z.get_ylim()
     xlims = ax1_z.get_xlim()
     ax1_z.set_ylim([0.0, 0.3])
@@ -1195,55 +1356,70 @@ for case_id, case_imgs  in image_dict.items():
 
     
     alpha_5 = 0.8
-    
-    E_vent_fit, E_grid = kernel_fit(E_vent)
+    params_list[case_id] = {} # have to create the empty dictionary
+    E_vent_fit, E_grid, E_vent_params = kernel_fit(E_vent)
+    params_list[case_id].update( {"E" : {"vent": E_vent_params}})
     res2 = ax1_8.plot(E_grid, np.exp(E_vent_fit), alpha=alpha_5, label="{0}".format(case_id))
     plot_color = res2[0].get_color()
     
-    E1_vent_fit, E1_grid = kernel_fit(E1_vent)
+    E1_vent_fit, E1_grid, E1_vent_params= kernel_fit(E1_vent)
+    params_list[case_id].update({"E1" : {"vent" : E1_vent_params}})
     res = ax2_8.plot(E1_grid, np.exp(E1_vent_fit), alpha=alpha_5, label="{0}".format(case_id), color=plot_color)
 
-    E2_vent_fit, E2_grid = kernel_fit(E2_vent)
+    E2_vent_fit, E2_grid, E2_vent_params= kernel_fit(E2_vent)
+    params_list[case_id].update( {"E2" : {"vent" : E2_vent_params}})
     res = ax3_8.plot(E2_grid, np.exp(E2_vent_fit), alpha=alpha_5, label="{0}".format(case_id), color=plot_color)
     
-    E3_vent_fit, E3_grid = kernel_fit(E3_vent)
+    E3_vent_fit, E3_grid, E3_vent_params= kernel_fit(E3_vent)
+    params_list[case_id].update( {"E3" : {"vent" : E3_vent_params}})
     res = ax4_8.plot(E3_grid, np.exp(E3_vent_fit), alpha=alpha_5, label="{0}".format(case_id), color=plot_color)
     
-    E4_vent_fit, E4_grid = kernel_fit(E4_vent)
+    E4_vent_fit, E4_grid, E4_vent_params = kernel_fit(E4_vent)
+    params_list[case_id].update( {"E4" : {"vent" : E4_vent_params}})
     res = ax5_8.plot(E4_grid, np.exp(E4_vent_fit), alpha=alpha_5, label="{0}".format(case_id), color=plot_color)
     
 
-    E_model_fit, E_grid = kernel_fit(E_model)
+    E_model_fit, E_grid, E_model_params = kernel_fit(E_model)
+    params_list[case_id]["E"].update({'model' : E_vent_params}) 
     res3 = ax6_8.plot(E_grid, np.exp(E_model_fit), alpha=alpha_5, label="{0}".format(case_id))
     plot_color2= res3[0].get_color()
     
-    E1_model_fit, E1_grid = kernel_fit(E1_model)
+    E1_model_fit, E1_grid, E1_model_params = kernel_fit(E1_model)
+    params_list[case_id]["E1"].update({"model" :  E1_model_params})
     res = ax7_8.plot(E1_grid, np.exp(E1_model_fit), alpha=alpha_5, label="{0}".format(case_id), color=plot_color2)
 
-    E2_model_fit, E2_grid = kernel_fit(E2_model)
+    E2_model_fit, E2_grid, E2_model_params = kernel_fit(E2_model)
+    params_list[case_id]["E2"].update({"model": E2_model_params})
     res = ax8_8.plot(E2_grid, np.exp(E2_model_fit), alpha=alpha_5, label="{0}".format(case_id), color=plot_color2)
     
-    E3_model_fit, E3_grid = kernel_fit(E3_model)
+    E3_model_fit, E3_grid, E3_model_params = kernel_fit(E3_model)
+    params_list[case_id]["E3"].update({"model": E3_model_params})
     res = ax9_8.plot(E3_grid, np.exp(E3_model_fit), alpha=alpha_5, label="{0}".format(case_id), color=plot_color2)
     
-    E4_model_fit, E4_grid = kernel_fit(E4_model)
+    E4_model_fit, E4_grid, E4_model_params = kernel_fit(E4_model)
+    params_list[case_id]["E4"].update({"model": E4_model_params})
     res = ax10_8.plot(E4_grid, np.exp(E4_model_fit), alpha=alpha_5, label="{0}".format(case_id), color=plot_color2)
     
     
-    E_PI_fit, E_grid = kernel_fit(E_PI)
+    E_PI_fit, E_grid, E_PI_params = kernel_fit(E_PI)
+    params_list[case_id]["E"].update({"PI": E_PI_params})
     res4 = ax11_8.plot(E_grid, np.exp(E_PI_fit), alpha=alpha_5, label="{0}".format(case_id))
     plot_color3= res4[0].get_color()
     
-    E1_PI_fit, E1_grid = kernel_fit(E1_PI)
+    E1_PI_fit, E1_grid, E1_PI_params = kernel_fit(E1_PI)
+    params_list[case_id]["E1"].update({"PI" :  E1_PI_params})
     res = ax12_8.plot(E1_grid, np.exp(E1_PI_fit), alpha=alpha_5, label="{0}".format(case_id), color=plot_color3)
 
-    E2_PI_fit, E2_grid = kernel_fit(E2_PI)
+    E2_PI_fit, E2_grid, E2_PI_params = kernel_fit(E2_PI)
+    params_list[case_id]["E2"].update( {"PI" :  E2_PI_params})
     res = ax13_8.plot(E2_grid, np.exp(E2_PI_fit), alpha=alpha_5, label="{0}".format(case_id), color=plot_color3)
     
-    E3_PI_fit, E3_grid = kernel_fit(E3_PI)
+    E3_PI_fit, E3_grid, E3_PI_params = kernel_fit(E3_PI)
+    params_list[case_id]["E3"].update( {"PI" : E3_PI_params})
     res = ax14_8.plot(E3_grid, np.exp(E3_PI_fit), alpha=alpha_5, label="{0}".format(case_id), color=plot_color3)
     
-    E4_PI_fit, E4_grid = kernel_fit(E4_PI)
+    E4_PI_fit, E4_grid, E4_PI_params = kernel_fit(E4_PI)
+    params_list[case_id]["E4"].update({"PI" : E4_PI_params})
     res = ax15_8.plot(E4_grid, np.exp(E4_PI_fit), alpha=alpha_5, label="{0}".format(case_id), color=plot_color3)
 
     
@@ -1349,7 +1525,7 @@ for case_id, case_imgs  in image_dict.items():
     ax1a_2.hist(E.ravel(), bins='auto', label="$E_0$")
     ax1a_2.axvline(x=np.mean(E), color='r', label="mean")
     ax1a_2.axvline(x=u_E.mean(), color='k', label=r'$+\bar{U}_{E_0}$')
-    ax1a_2.axvline(x=-u_E.mean(), color='k', label=r'$-\bar{U}_{E_0}$')
+    #ax1a_2.axvline(x=-u_E.mean(), color='k', label=r'$-\bar{U}_{E_0}$')
     ymin, ymax = ax1a_2.get_ylim()
     ax1a_2.set_ylim([ymin, shrink_y*ymax])
     xmin, xmax = ax1a_2.get_xlim()
@@ -1358,17 +1534,17 @@ for case_id, case_imgs  in image_dict.items():
     ax1b_2.hist(E_model.ravel(), bins='auto', label="$E_0$")
     ax1b_2.axvline(x=np.mean(E_model), color='r', label="mean")
     ax1b_2.axvline(x=u_E_m.mean(), color='k', label=r'$+\bar{U}_{E_0}$')
-    ax1b_2.axvline(x=-u_E_m.mean(), color='k', label=r'$-\bar{U}_{E_0}$')
+    #ax1b_2.axvline(x=-u_E_m.mean(), color='k', label=r'$-\bar{U}_{E_0}$')
     ax1b_2.legend()
     ax1c_2.hist(E_vent.ravel(), bins='auto', label="$E_0$")
     ax1c_2.axvline(x=np.mean(E_vent), color='r', label="mean")
     ax1c_2.axvline(x=u_E_v.mean(), color='k', label=r'$+\bar{U}_{E_0}$')
-    ax1c_2.axvline(x=-u_E_v.mean(), color='k', label=r'$-\bar{U}_{E_0}$')
+    #ax1c_2.axvline(x=-u_E_v.mean(), color='k', label=r'$-\bar{U}_{E_0}$')
     ax1c_2.legend()
     ax1d_2.hist(E_PI.ravel(), bins='auto', label="$E_0$")
     ax1d_2.axvline(x=np.mean(E_PI), color='r', label="mean")
     ax1d_2.axvline(x=u_E_pi.mean(), color='k', label=r'$+\bar{U}_{E_0}$')
-    ax1d_2.axvline(x=-u_E_pi.mean(), color='k', label=r'$-\bar{U}_{E_0}$')
+    #ax1d_2.axvline(x=-u_E_pi.mean(), color='k', label=r'$-\bar{U}_{E_0}$')
     ax1d_2.legend()
     #ax1d_2.hist(u_E.ravel(), bins='auto', alpha=alpha_4, label="$\bar{U}_{E}$ Volume", density=True)
     #ax1d_2.hist(u_E_m.ravel(), bins='auto', alpha=alpha_4, label="$\bar{U}_{E}$ Wall", density=True)
@@ -1378,7 +1554,7 @@ for case_id, case_imgs  in image_dict.items():
     ax2a_2.hist(E1.ravel(), bins='auto', label="$E_1$")
     ax2a_2.axvline(x=np.mean(E), color='r', label="mean")
     ax2a_2.axvline(x=u_E1.mean(), color='k', label=r'$+\bar{U}_{E_1}$')
-    ax2a_2.axvline(x=-u_E1.mean(), color='k', label=r'$-\bar{U}_{E_1}$')
+    #ax2a_2.axvline(x=-u_E1.mean(), color='k', label=r'$-\bar{U}_{E_1}$')
     ymin, ymax = ax2a_2.get_ylim()
     ax2a_2.set_ylim([ymin, shrink_y*ymax])
     xmin, xmax = ax2a_2.get_xlim()
@@ -1387,17 +1563,17 @@ for case_id, case_imgs  in image_dict.items():
     ax2b_2.hist(E1_model.ravel(), bins='auto', label="$E_1$")
     ax2b_2.axvline(x=np.mean(E1_model), color='r', label="mean")
     ax2b_2.axvline(x=u_E1_m.mean(), color='k', label=r'$+\bar{U}_{E_1}$')
-    ax2b_2.axvline(x=-u_E1_m.mean(), color='k', label=r'$-\bar{U}_{E_1}$')
+    #ax2b_2.axvline(x=-u_E1_m.mean(), color='k', label=r'$-\bar{U}_{E_1}$')
     ax2b_2.legend()
     ax2c_2.hist(E1_vent.ravel(), bins='auto', label="$E_1$t")
     ax2c_2.axvline(x=np.mean(E1_vent), color='r', label="mean")
     ax2c_2.axvline(x=u_E1_v.mean(), color='k', label=r'$+\bar{U}_{E_1}$')
-    ax2c_2.axvline(x=-u_E1_v.mean(), color='k', label=r'$-\bar{U}_{E_1}$')
+    #ax2c_2.axvline(x=-u_E1_v.mean(), color='k', label=r'$-\bar{U}_{E_1}$')
     ax2c_2.legend()
     ax2d_2.hist(E1_PI.ravel(), bins='auto', label="$E_1$")
     ax2d_2.axvline(x=np.mean(E1_PI), color='r', label="mean")
     ax2d_2.axvline(x=u_E1_pi.mean(), color='k', label=r'$+\bar{U}_{E_1}$')
-    ax2d_2.axvline(x=-u_E1_pi.mean(), color='k', label=r'$-\bar{U}_{E_1}$')
+    #ax2d_2.axvline(x=-u_E1_pi.mean(), color='k', label=r'$-\bar{U}_{E_1}$')
     ax2d_2.legend()
     #ax2d_2.hist(u_E1.ravel(), bins='auto', alpha=alpha_4, label="$\bar{U}_{E_1}$ Volume", density=True)
     #ax2d_2.hist(u_E1_m.ravel(), bins='auto', alpha=alpha_4, label="$\bar{U}_{E_1}$ Wall", density=True)
@@ -1407,7 +1583,7 @@ for case_id, case_imgs  in image_dict.items():
     ax3a_2.hist(E2.ravel(), bins='auto', label="$E_2$")
     ax3a_2.axvline(x=np.mean(E2), color='r', label="mean")
     ax3a_2.axvline(x=u_E2.mean(), color='k', label=r'$+\bar{U}_{E_2}$')
-    ax3a_2.axvline(x=-u_E2.mean(), color='k', label=r'$-\bar{U}_{E_2}$')
+    #ax3a_2.axvline(x=-u_E2.mean(), color='k', label=r'$-\bar{U}_{E_2}$')
     ymin, ymax = ax3a_2.get_ylim()
     ax3a_2.set_ylim([ymin, shrink_y*ymax])
     xmin, xmax = ax3a_2.get_xlim()
@@ -1416,17 +1592,17 @@ for case_id, case_imgs  in image_dict.items():
     ax3b_2.hist(E2_model.ravel(), bins='auto', label="$E_2$")
     ax3b_2.axvline(x=np.mean(E2_model), color='r', label="mean")
     ax3b_2.axvline(x=u_E2_m.mean(), color='k', label=r'$+\bar{U}_{E_2}$')
-    ax3b_2.axvline(x=-u_E2_m.mean(), color='k', label=r'$-\bar{U}_{E_2}$')
+    #ax3b_2.axvline(x=-u_E2_m.mean(), color='k', label=r'$-\bar{U}_{E_2}$')
     ax3b_2.legend()
     ax3c_2.hist(E2_vent.ravel(), bins='auto', label="$E_2$")
     ax3c_2.axvline(x=np.mean(E2_vent), color='r', label="mean")
     ax3c_2.axvline(x=u_E2_v.mean(), color='k', label=r'$+\bar{U}_{E_2}$')
-    ax3c_2.axvline(x=-u_E2_v.mean(), color='k', label=r'$-\bar{U}_{E_2}$')
+    #ax3c_2.axvline(x=-u_E2_v.mean(), color='k', label=r'$-\bar{U}_{E_2}$')
     ax3c_2.legend()
     ax3d_2.hist(E2_PI.ravel(), bins='auto', label="$E_2$")
     ax3d_2.axvline(x=np.mean(E2_PI), color='r', label="mean")
     ax3d_2.axvline(x=u_E2_pi.mean(), color='k', label=r'$+\bar{U}_{E_2}$')
-    ax3d_2.axvline(x=-u_E2_pi.mean(), color='k', label=r'$-\bar{U}_{E_2}$')
+    #ax3d_2.axvline(x=-u_E2_pi.mean(), color='k', label=r'$-\bar{U}_{E_2}$')
     ax3d_2.legend()
     #ax3d_2.hist(u_E2.ravel(), bins='auto', alpha=alpha_4, label="$\bar{U}_{E_2}$ Volume", density=True)
     #ax3d_2.hist(u_E2_m.ravel(), bins='auto', alpha=alpha_4, label="$\bar{U}_{E_2}$ Wall", density=True)
@@ -1436,7 +1612,7 @@ for case_id, case_imgs  in image_dict.items():
     ax4a_2.hist(E3.ravel(), bins='auto', label="$E_3$")
     ax4a_2.axvline(x=np.mean(E3), color='r', label="mean")
     ax4a_2.axvline(x=u_E3.mean(), color='k', label=r'$+\bar{U}_{E_3}$')
-    ax4a_2.axvline(x=-u_E3.mean(), color='k', label=r'$-\bar{U}_{E_3}$')
+    #ax4a_2.axvline(x=-u_E3.mean(), color='k', label=r'$-\bar{U}_{E_3}$')
     ymin, ymax = ax4a_2.get_ylim()
     ax4a_2.set_ylim([ymin, shrink_y*ymax])
     xmin, xmax = ax4a_2.get_xlim()
@@ -1445,17 +1621,17 @@ for case_id, case_imgs  in image_dict.items():
     ax4b_2.hist(E3_model.ravel(), bins='auto', label="$E_3$")
     ax4b_2.axvline(x=np.mean(E3_model), color='r', label="mean")
     ax4b_2.axvline(x=u_E3_m.mean(), color='k', label=r'$+\bar{U}_{E_3}$')
-    ax4b_2.axvline(x=-u_E3_m.mean(), color='k', label=r'$-\bar{U}_{E_3}$')
+    #ax4b_2.axvline(x=-u_E3_m.mean(), color='k', label=r'$-\bar{U}_{E_3}$')
     ax4b_2.legend()
     ax4c_2.hist(E3_vent.ravel(), bins='auto', label="$E_1$")
     ax4c_2.axvline(x=np.mean(E3_vent), color='r', label="mean")
     ax4c_2.axvline(x=u_E3_v.mean(), color='k', label=r'$+\bar{U}_{E_3}$')
-    ax4c_2.axvline(x=-u_E3_v.mean(), color='k', label=r'$-\bar{U}_{E_3}$')
+    #ax4c_2.axvline(x=-u_E3_v.mean(), color='k', label=r'$-\bar{U}_{E_3}$')
     ax4c_2.legend()
     ax4d_2.hist(E3_PI.ravel(), bins='auto', label="$E_3$")
     ax4d_2.axvline(x=np.mean(E3_PI), color='r', label="mean")
     ax4d_2.axvline(x=u_E3_pi.mean(), color='k', label=r'$+\bar{U}_{E_3}$')
-    ax4d_2.axvline(x=-u_E3_pi.mean(), color='k', label=r'$-\bar{U}_{E_3}$')
+    #ax4d_2.axvline(x=-u_E3_pi.mean(), color='k', label=r'$-\bar{U}_{E_3}$')
     ax4d_2.legend()
     #ax4d_2.hist(u_E3.ravel(), bins='auto', alpha=alpha_4, label="$\bar{U}_{E_3}$ Volume", density=True)
     #ax4d_2.hist(u_E3_m.ravel(), bins='auto', alpha=alpha_4, label="$\bar{U}_{E_3}$ Wall", density=True)
@@ -1465,7 +1641,7 @@ for case_id, case_imgs  in image_dict.items():
     ax5a_2.hist(E4.ravel(), bins='auto', label="$E_4$")
     ax5a_2.axvline(x=np.mean(E4), color='r', label="mean")
     ax5a_2.axvline(x=u_E4.mean(), color='k', label=r'$+\bar{U}_{E_4}$')
-    ax5a_2.axvline(x=-u_E4.mean(), color='k', label=r'$-\bar{U}_{E_4}$')
+    #ax5a_2.axvline(x=-u_E4.mean(), color='k', label=r'$-\bar{U}_{E_4}$')
     ymin, ymax = ax5a_2.get_ylim()
     ax5a_2.set_ylim([ymin, shrink_y*ymax])
     xmin, xmax = ax5a_2.get_xlim()
@@ -1474,17 +1650,17 @@ for case_id, case_imgs  in image_dict.items():
     ax5b_2.hist(E4_model.ravel(), bins='auto', label="$E_4$ model")
     ax5b_2.axvline(x=np.mean(E4_model), color='r', label="mean")
     ax5b_2.axvline(x=u_E4_m.mean(), color='k', label=r'$+\bar{U}_{E_4}$')
-    ax5b_2.axvline(x=-u_E4_m.mean(), color='k', label=r'$-\bar{U}_{E_4}$')
+    #ax5b_2.axvline(x=-u_E4_m.mean(), color='k', label=r'$-\bar{U}_{E_4}$')
     ax5b_2.legend()
     ax5c_2.hist(E4_vent.ravel(), bins='auto', label="$E_4$  vent")
     ax5c_2.axvline(x=np.mean(E4_vent), color='r', label="mean")
     ax5c_2.axvline(x=u_E4_v.mean(), color='k', label=r'$+\bar{U}_{E_4}$')
-    ax5c_2.axvline(x=-u_E4_v.mean(), color='k', label=r'$-\bar{U}_{E_4}$')
+    #ax5c_2.axvline(x=-u_E4_v.mean(), color='k', label=r'$-\bar{U}_{E_4}$')
     ax5c_2.legend()
     ax5d_2.hist(E4_PI.ravel(), bins='auto', label="$E_4$")
     ax5d_2.axvline(x=np.mean(E4_PI), color='r', label="mean")
     ax5d_2.axvline(x=u_E4_pi.mean(), color='k', label=r'$+\bar{U}_{E_2}$')
-    ax5d_2.axvline(x=-u_E4_pi.mean(), color='k', label=r'$-\bar{U}_{E_2}$')
+    #ax5d_2.axvline(x=-u_E4_pi.mean(), color='k', label=r'$-\bar{U}_{E_2}$')
     ax5d_2.legend()
     #ax5d_2.hist(u_E4.ravel(), bins='auto', alpha=alpha_4, label="$\bar{U}_{E_4}$ Volume", density=True)
     #ax5d_2.hist(u_E4_m.ravel(), bins='auto', alpha=alpha_4, label="$\bar{U}_{E_4}$ Wall", density=True)
@@ -1549,23 +1725,23 @@ for case_id, case_imgs  in image_dict.items():
         
         #E_non-zeros = np.where(E == 0.0)
         
-        E_term_frac   = np.divide(E, u_E_confidence, dtype=np.float)
-        E1_term_frac = np.divide(E1, u_E1_confidence, dtype=np.float)
-        E2_term_frac = np.divide(E2, u_E2_confidence, dtype=np.float)
-        E3_term_frac = np.divide(E3,  u_E3_confidence, dtype=np.float)
-        E4_term_frac = np.divide(E4,  u_E4_confidence, dtype=np.float)
+        E_term_frac   = np.divide(E, u_E_confidence.mean(), dtype=np.float)
+        E1_term_frac = np.divide(E1, u_E1_confidence.mean(), dtype=np.float)
+        E2_term_frac = np.divide(E2, u_E2_confidence.mean(), dtype=np.float)
+        E3_term_frac = np.divide(E3,  u_E3_confidence.mean(), dtype=np.float)
+        E4_term_frac = np.divide(E4,  u_E4_confidence.mean(), dtype=np.float)
         
         
         # assuming the null hypothesis is that the pixel value for E is zero
-        P_E   = 1.0 - stats.norm.cdf( conf * ( E_term_frac   - 1.0) )
-        P_E1 = 1.0 - stats.norm.cdf( conf * ( E1_term_frac - 1.0) )
-        P_E2 = 1.0 - stats.norm.cdf( conf * ( E2_term_frac - 1.0) )
-        P_E3 = 1.0 - stats.norm.cdf( conf * ( E3_term_frac - 1.0) )
-        P_E4 = 1.0 - stats.norm.cdf( conf * ( E4_term_frac - 1.0) )
+        P_E   = 1.0 - stats.norm.cdf( E_term_frac / conf )
+        P_E1 = 1.0 - stats.norm.cdf( E1_term_frac / conf )
+        P_E2 = 1.0 - stats.norm.cdf( E2_term_frac / conf)
+        P_E3 = 1.0 - stats.norm.cdf( E3_term_frac / conf)
+        P_E4 = 1.0 - stats.norm.cdf( E4_term_frac / conf)
             
         
         # create confidence arrays
-        pE = -1.0*np.ones_like(E_full)
+        pE = np.zeros_like(E_full)
         pE[non_zero_indx] = P_E
         write_list["pE.nrrd"] = pE
         
@@ -1573,12 +1749,12 @@ for case_id, case_imgs  in image_dict.items():
         uE[non_zero_indx] = u_E_confidence
         write_list["UE.nrrd"] = uE
 
-        percent_uE = 1.0*np.ones_like(E_full)
-        percent_uE[non_zero_indx] = np.abs(div0(1.0, E_term_frac, value=-1.0) )
-        percent_uE[percent_uE > 1.0] = 1.0
-        write_list["percent_error_E.nrrd"] =  percent_uE
+        #percent_uE = 1.0*np.ones_like(E_full)
+        #percent_uE[non_zero_indx] = np.abs(div0(1.0, E_term_frac, value=-1.0) )
+        #percent_uE[percent_uE > 1.0] = 1.0
+        #write_list["percent_error_E.nrrd"] =  percent_uE
         
-        pE1 = -1.0*np.ones_like(E1_full)
+        pE1 = np.zeros_like(E1_full)
         pE1[non_zero_indx] = P_E1
         write_list["pE1.nrrd"] = pE1
 
@@ -1586,12 +1762,12 @@ for case_id, case_imgs  in image_dict.items():
         uE1[non_zero_indx] = u_E1_confidence
         write_list["UE1.nrrd"] = uE1
 
-        percent_uE1 = -1.0*np.ones_like(E1_full)
-        percent_uE1[non_zero_indx] = np.abs(div0(1.0,  E1_term_frac, value=-1.0))
-        percent_uE1[percent_uE1 > 1.0] = 1.0
-        write_list["percent_error_E1.nrrd"] = percent_uE1
+        #percent_uE1 = -1.0*np.ones_like(E1_full)
+        #percent_uE1[non_zero_indx] = np.abs(div0(1.0,  E1_term_frac, value=-1.0))
+        #percent_uE1[percent_uE1 > 1.0] = 1.0
+        #write_list["percent_error_E1.nrrd"] = percent_uE1
     
-        pE2 = -1.0*np.ones_like(E2_full)
+        pE2 = np.zeros_like(E2_full)
         pE2[non_zero_indx] = P_E2
         write_list["pE2.nrrd"] = pE2
         
@@ -1599,12 +1775,12 @@ for case_id, case_imgs  in image_dict.items():
         uE2[non_zero_indx] = u_E2_confidence
         write_list["UE2.nrrd"] = uE2
         
-        percent_uE2 = -1.0*np.ones_like(E2_full)
-        percent_uE2[non_zero_indx] = np.abs(div0(1.0,  E2_term_frac, value=-1.0 ) )
-        percent_uE2[percent_uE2 > 1.0] = 1.0
-        write_list["percent_error_E2.nrrd"] =  percent_uE2
+        #percent_uE2 = -1.0*np.ones_like(E2_full)
+        #percent_uE2[non_zero_indx] = np.abs(div0(1.0,  E2_term_frac, value=-1.0 ) )
+        #percent_uE2[percent_uE2 > 1.0] = 1.0
+        #write_list["percent_error_E2.nrrd"] =  percent_uE2
 
-        pE3= -1.0*np.ones_like(E3_full)
+        pE3= np.zeros_like(E3_full)
         pE3[non_zero_indx] = P_E3
         write_list["pE1.nrrd"] = pE3
 
@@ -1612,12 +1788,12 @@ for case_id, case_imgs  in image_dict.items():
         uE3[non_zero_indx] = u_E3_confidence
         write_list["UE3.nrrd"] = uE3
         
-        percent_uE3 = -1.0*np.ones_like(E3_full)
-        percent_uE3[non_zero_indx] = np.abs(div0(1.0,  E3_term_frac, value=-1.0) )
-        percent_uE3[percent_uE3 > 1.0] = 1.0
-        write_list["percent_error_E3.nrrd"] = percent_uE3
+        #percent_uE3 = -1.0*np.ones_like(E3_full)
+        #percent_uE3[non_zero_indx] = np.abs(div0(1.0,  E3_term_frac, value=-1.0) )
+        #percent_uE3[percent_uE3 > 1.0] = 1.0
+        #write_list["percent_error_E3.nrrd"] = percent_uE3
 
-        pE4 = -1.0*np.ones_like(E4_full)
+        pE4 = np.zeros_like(E4_full)
         pE4[non_zero_indx] = P_E4
         write_list["pE4.nrrd"] = pE4
         
@@ -1625,62 +1801,62 @@ for case_id, case_imgs  in image_dict.items():
         uE4[non_zero_indx] = u_E4_confidence
         write_list["UE4.nrrd"] = uE4
         
-        percent_uE4 = -1.0*np.ones_like(E4_full)
-        percent_uE4[non_zero_indx] = np.abs(div0(1.0,  E4_term_frac, value=-1.0 ) )
-        percent_uE4[percent_uE4 > 1.0] = 1.0
-        write_list["percent_error_E4.nrrd"] = percent_uE4
+        #percent_uE4 = -1.0*np.ones_like(E4_full)
+        #percent_uE4[non_zero_indx] = np.abs(div0(1.0,  E4_term_frac, value=-1.0 ) )
+        #percent_uE4[percent_uE4 > 1.0] = 1.0
+        #write_list["percent_error_E4.nrrd"] = percent_uE4
 
         # threshold 
-        indx_E = np.where(E_full > uE)
-        E_thresh = np.zeros_like(E_full)
-        E_thresh[indx_E] = E_full[indx_E]
-        write_list["E_thresh.nrrd"] = E_thresh
+        #indx_E = np.where(E_full > uE)
+        #E_thresh = np.zeros_like(E_full)
+        #E_thresh[indx_E] = E_full[indx_E]
+        #write_list["E_thresh.nrrd"] = E_thresh
         
-        indx_E1 = np.where(E1_full > uE1)
-        E1_thresh = np.zeros_like(E1_full)
-        E1_thresh[indx_E1] = E1_full[indx_E1]
-        write_list["E1_thresh.nrrd"] = E1_thresh
+        #indx_E1 = np.where(E1_full > uE1)
+        #E1_thresh = np.zeros_like(E1_full)
+        #E1_thresh[indx_E1] = E1_full[indx_E1]
+        #write_list["E1_thresh.nrrd"] = E1_thresh
 
-        indx_E2 = np.where(E2_full > uE2)
-        E2_thresh = np.zeros_like(E2_full)
-        E2_thresh[indx_E2] = E2_full[indx_E2]
-        write_list["E2_thresh.nrrd"] = E2_thresh
+        #indx_E2 = np.where(E2_full > uE2)
+        #E2_thresh = np.zeros_like(E2_full)
+        #E2_thresh[indx_E2] = E2_full[indx_E2]
+        #write_list["E2_thresh.nrrd"] = E2_thresh
 
-        indx_E3 = np.where(E3_full > uE3)
-        E3_thresh = np.zeros_like(E3_full)
-        E3_thresh[indx_E3] = E3_full[indx_E3]
-        write_list["E3_thresh.nrrd"] = E3_thresh
+        #indx_E3 = np.where(E3_full > uE3)
+        #E3_thresh = np.zeros_like(E3_full)
+        #E3_thresh[indx_E3] = E3_full[indx_E3]
+        #write_list["E3_thresh.nrrd"] = E3_thresh
         
-        indx_E4 = np.where(E4_full > uE4)
-        E4_thresh = np.zeros_like(E4_full)
-        E4_thresh[indx_E4] = E4_full[indx_E4]
-        write_list["E4_thresh.nrrd"] = E4_thresh
+        #indx_E4 = np.where(E4_full > uE4)
+        #E4_thresh = np.zeros_like(E4_full)
+        #E4_thresh[indx_E4] = E4_full[indx_E4]
+        #write_list["E4_thresh.nrrd"] = E4_thresh
         
-        # threshold 2
-        indx_E = np.where(E_full > 0.0)
-        E_thresh2= np.zeros_like(E_full)
-        E_thresh2[indx_E] = E_full[indx_E]
-        write_list["E_thresh2.nrrd"] = E_thresh2
+        ## threshold 2
+        #indx_E = np.where(E_full > 0.0)
+        #E_thresh2= np.zeros_like(E_full)
+        #E_thresh2[indx_E] = E_full[indx_E]
+        #write_list["E_thresh2.nrrd"] = E_thresh2
         
-        indx_E1 = np.where(E1_full > 0.0)
-        E1_thresh2 = np.zeros_like(E1_full)
-        E1_thresh2[indx_E1] = E1_full[indx_E1]
-        write_list["E1_thresh2.nrrd"] = E1_thresh2
+        #indx_E1 = np.where(E1_full > 0.0)
+        #E1_thresh2 = np.zeros_like(E1_full)
+        #E1_thresh2[indx_E1] = E1_full[indx_E1]
+        #write_list["E1_thresh2.nrrd"] = E1_thresh2
 
-        indx_E2 = np.where(E2_full > 0.0)
-        E2_thresh2 = np.zeros_like(E2_full)
-        E2_thresh2[indx_E2] = E2_full[indx_E2]
-        write_list["E2_thresh2.nrrd"] = E2_thresh2
+        #indx_E2 = np.where(E2_full > 0.0)
+        #E2_thresh2 = np.zeros_like(E2_full)
+        #E2_thresh2[indx_E2] = E2_full[indx_E2]
+        #write_list["E2_thresh2.nrrd"] = E2_thresh2
 
-        indx_E3 = np.where(E3_full > 0.0)
-        E3_thresh2= np.zeros_like(E3_full)
-        E3_thresh2[indx_E3] = E3_full[indx_E3]
-        write_list["E3_thresh2.nrrd"] = E3_thresh2
+        #indx_E3 = np.where(E3_full > 0.0)
+        #E3_thresh2= np.zeros_like(E3_full)
+        #E3_thresh2[indx_E3] = E3_full[indx_E3]
+        #write_list["E3_thresh2.nrrd"] = E3_thresh2
         
-        indx_E4 = np.where(E4_full > 0.0)
-        E4_thresh2 = np.zeros_like(E4_full)
-        E4_thresh2[indx_E4] = E4_full[indx_E4]
-        write_list["E4_thresh2.nrrd"] = E4_thresh2
+        #indx_E4 = np.where(E4_full > 0.0)
+        #E4_thresh2 = np.zeros_like(E4_full)
+        #E4_thresh2[indx_E4] = E4_full[indx_E4]
+        #write_list["E4_thresh2.nrrd"] = E4_thresh2
 
 
         for file_name, np_image in write_list.items():
@@ -1809,31 +1985,11 @@ for case_id, case_imgs  in image_dict.items():
         print("hehe")
         
     
+pickle.dump( params_list, open(os.path.join(write_file_dir, bw_file), 'wb') )
 
-ax11_8.legend(bbox_to_anchor=(1.04,1), loc="upper left")
-#ax2_8.legend()
-#ax3_8.legend()
-#ax4_8.legend()
-#ax5_8.legend()
+print("saved another pickle!")
 
-path_ventricle_model = os.path.join(write_file_dir, "Compare_histograms.png")
-fig8.savefig(path_ventricle_model, dpi=dpi_value)
-plt.close(fig8)
-del fig8
-
-
-ax11_5.legend(bbox_to_anchor=(1.04,1), loc="upper left")
-#ax2_8.legend()
-#ax3_8.legend()
-#ax4_8.legend()
-#ax5_8.legend()
-
-path_ventricle_model = os.path.join(write_file_dir, "Compare_pre2post_ellipse.png")
-fig5.savefig(path_ventricle_model, dpi=dpi_value)
-plt.close(fig5)
-del fig5
-   
-data_cases = {'Case ID': case_id_list, "Enhancement Type": e_type_list, "label": label_list, "Average": average_list, "Uncertainty": uncertainty_list}
+data_cases = {'Case ID': case_id_list, "Enhancement Type": e_type_list, "Region": label_list, "Average": average_list, "Uncertainty": uncertainty_list}
 # Create DataFrame 
 df_cases = pd.DataFrame(data_cases)
 
@@ -1843,5 +1999,32 @@ print("saved the pickle!")
 print(image_path_list)
 print(bootstrap_fig_list)
 
-    
 
+lg_8 = ax11_8.legend(bbox_to_anchor=(1.04,1), loc="upper left")
+for lg in lg_8.legendHandles:
+    lg.set_alpha(1.0)
+
+path_ventricle_model = os.path.join(write_file_dir, "Compare_histograms.png")
+fig8.savefig(path_ventricle_model, dpi=dpi_value)
+plt.close(fig8)
+del fig8
+
+
+lg_5 = ax11_5.legend(bbox_to_anchor=(1.04,1), loc="upper left")
+for lg in lg_5.legendHandles:
+    lg.set_alpha(1.0)
+
+path_ventricle_model = os.path.join(write_file_dir, "Compare_pre2post.png")
+fig5.savefig(path_ventricle_model, dpi=dpi_value)
+plt.close(fig5)
+del fig5
+
+
+lg_6 = ax11_6.legend(bbox_to_anchor=(1.04,1), loc="upper left")
+for lg in lg_6.legendHandles:
+    lg.set_alpha(1.0)
+
+path_ventricle_model = os.path.join(write_file_dir, "Compare_pre2post_ellipse.png")
+fig6.savefig(path_ventricle_model, dpi=dpi_value)
+plt.close(fig6)
+del fig6
