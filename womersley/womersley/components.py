@@ -414,7 +414,8 @@ class coefficient_converter(object):
         self.mu = waveform_obj.mu # viscosity
         self.R = waveform_obj.radius # radius
         self.period = waveform_obj.period
-        self.set_omega()
+        self.init_omega()
+        self.init_alpha()
         self.set_alpha()# womersley number
         self.kind = kind
         self.N_coef = coef.shape[0] # assume numpy array
@@ -472,43 +473,48 @@ class coefficient_converter(object):
     def set_coef(self):
         coef_set_list = []
         for k in self.coef_types:
-            if(k == self.kind):
-                self.coef_dict[self.kind] = self.input_coef
-            else:
-                coef_set_list.append(k)
+            #if(k == self.kind):
+                #self.coef_dict[self.kind] = self.input_coef
+            #else:
+            coef_set_list.append(k)
         self.convert(self.kind, coef_set_list)
 
         
     def set_radius(self, radius):
-        self.radius = radius
-        self.set_alpha()
-        self.set_coef()
+        self.R = radius
+        self.update()
         
     def set_viscosity(self, mu):
         self.mu = mu
-        self.set_alpha()
-        self.set_coef()
+        self.update()
     
     def set_density(self, rho):
         self.rho = rho
-        self.set_alpha()
-        self.set_coef()
+        self.update()
+    
+    def init_omega(self):
+        self.omega = 2.0*np.pi / self.period
     
     def set_omega(self):
         self.omega = 2.0*np.pi / self.period
+        self.update()
 
     def set_period(self, period):
         self.period = period
         self.set_omega()
-        self.set_alpha()
 
     def set_alpha(self):
         self.alpha = np.sqrt(self.omega * self.rho /self.mu) * self.R
-        
-    def set_radius(self, radius):
-        self.radius = radius
+
+    def init_alpha(self):
+        self.alpha = np.sqrt(self.omega * self.rho /self.mu) * self.R
+        self.update()
+
+    def update(self):
         self.set_alpha()
+        self.set_womersley_params()
         self.set_coef()
+        
         
 
 
@@ -524,7 +530,8 @@ class converter_from_norm(object):
         self.mu = waveform_obj.mu # viscosity
         self.R = waveform_obj.radius # radius
         self.period = waveform_obj.period
-        self.set_omega()
+        self.init_omega()
+        self.init_alpha()
         self.set_alpha()# womersley number
         self.kind = waveform_obj.kind
         self.N_coef = waveform_obj.coef.shape[0] # assume numpy array
@@ -582,42 +589,45 @@ class converter_from_norm(object):
     def set_coef(self):
         coef_set_list = []
         for k in self.coef_types:
-            if(k == self.kind):
-                self.coef_dict[self.kind] = self.input_coef
-            else:
-                coef_set_list.append(k)
+            #if(k == self.kind):
+                #self.coef_dict[self.kind] = self.input_coef
+            #else:
+            coef_set_list.append(k)
         self.convert(self.kind, coef_set_list)
 
         
     def set_radius(self, radius):
-        self.radius = radius
-        self.set_alpha()
-        self.set_coef()
+        self.R = radius
+        self.update()
         
     def set_viscosity(self, mu):
         self.mu = mu
-        self.set_alpha()
-        self.set_coef()
+        self.update()
     
     def set_density(self, rho):
         self.rho = rho
-        self.set_alpha()
-        self.set_coef()
+        self.update()
+    
+    def init_omega(self):
+        self.omega = 2.0*np.pi / self.period
     
     def set_omega(self):
         self.omega = 2.0*np.pi / self.period
+        self.update()
 
     def set_period(self, period):
         self.period = period
         self.set_omega()
-        self.set_alpha()
 
     def set_alpha(self):
         self.alpha = np.sqrt(self.omega * self.rho /self.mu) * self.R
-        
-    def set_radius(self, radius):
-        self.radius = radius
+
+    def init_alpha(self):
+        self.alpha = np.sqrt(self.omega * self.rho /self.mu) * self.R
+
+    def update(self):
         self.set_alpha()
+        self.set_womersley_params()
         self.set_coef()
         
 

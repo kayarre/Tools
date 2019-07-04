@@ -17,6 +17,7 @@ from sklearn import metrics
 import matplotlib.pyplot as plt
 
 import scipy.spatial.distance as distance
+from sklearn.neighbors.kde import KernelDensity
 
 
 def VWI_Enhancement(post, pre, mean_post_vent, mean_pre_vent, kind = "E1",
@@ -198,6 +199,7 @@ def distance_function(data,  metric="default", normalize=None):
     elif (data[2].shape != data[3].shape):
         raise  Exception(" input data a and b not the same size a:{0} b:{1}".format(data[2].shape[0], data[3].shape[0]))
         return 99999.0
+
     
     #normalize_measures = ["euclidean", "correlation", "manhattan","braycurtis", "hellinger", "kullbackleiber"]
     
@@ -213,7 +215,8 @@ def distance_function(data,  metric="default", normalize=None):
 
     binctr_a = 0.5*(binsa[1:]+binsa[:-1])
     binctr_b = 0.5*(binsb[1:]+binsb[:-1])
-
+    #print(binctr_a.shape, binctr_b.shape, hista.shape, histb.shape, binsa.shape)
+    
     if (metric == "default" or metric == "euclidean"):
         dist = distance.euclidean(hista, histb)
     elif(metric == "manhattan"):
@@ -243,6 +246,7 @@ def distance_function(data,  metric="default", normalize=None):
     elif(metric == "hellinger"):
         dist = hellinger(hista, histb)
     elif(metric == "wasserstein"):
+        
         dist = stats.wasserstein_distance(binctr_a, binctr_b,  u_weights=hista, v_weights=histb)
     elif(metric == "energy"):
         dist = stats.energy_distance(binctr_a, binctr_b, u_weights=hista, v_weights=histb)
@@ -271,6 +275,42 @@ def get_histograms(post, pre, density_bool=False):
     pre_hist = np.histogram(pre, range=range_b, bins=nbins, density=density_bool)
     return post_hist, pre_hist
 
+
+def kernel_fit_single(data, bw=None, min_size=20, kern='gaussian'):
+    """ guassian fit to 1D data
+    """
+    res = np.histogram(data.ravel(), bins='sqrt', density=True)
+    std_data = data.std()
+    if (bw == None):
+        bw = (data.ravel().shape[0] * (std_data+ 2) / 4.)**(-1. / (std_data + 4))
+ 
+    N_bins = res[1].shape[0]
+    if (N_bins < min_size):
+        extra = 0.2
+        #N_bins *=2
+    else:
+        extra = 0.0
+    # get plus or minus 20%
+    
+    x_grid = np.linspace(res[1][0]-extra*abs(res[1][0]), res[1][-1] + extra*abs(res[1][0]), N_bins)
+    
+    kde = KernelDensity(bandwidth=bw, kernel=kern)
+    kde.fit(data.ravel()[:, None])
+
+    pdf = np.exp(kde.score_samples(x_grid[:, None]))
+    
+    return pdf, x_grid
+
+def kernel_fit_hist(data, hist, bw=None, min_size=20, kern='gaussian'):
+    """ guassian fit to 1D data
+    """
+    x_grid = 0.5*(hist[1][1:]+hist[1][:-1]) # sample one less than histogram
+    kde = KernelDensity(bandwidth=bw, kernel=kern)
+    kde.fit(data.ravel()[:, None])
+
+    pdf = np.exp(kde.score_samples(x_grid[:, None]))
+    
+    return pdf, hist[1]
 #vars
 
 #conf = 2.0 #95% confidence interval
@@ -297,14 +337,24 @@ json_file = "/home/sansomk/caseFiles/mri/VWI_proj/step3_normalization.json"
 
 #pickle_file = "/home/sansomk/caseFiles/mri/VWI_proj/step3_pickle.pkl"
 write_file_dir = "/home/sansomk/caseFiles/mri/VWI_proj"
+bw_file = "bw_pickle.pkl"
 write_dir = "VWI_analysis"
 plots_dir = "plots"
+
+use_kde = False
+
+distance_file_name = "distance_metrics_kde_df.pkl"
 #overwrite = 0
 #overwrite_out = False
 #skip_bootstrap = True
 
 with open(json_file, 'r') as f:
     data = json.load(f)
+
+if use_kde:
+    with open(os.path.join(write_file_dir, bw_file), 'rb') as handle:
+        params_list = pickle.load( handle)
+    print("load bandwidght parameters")
 
 labels = ["post_float","pre_float", "VWI_post_masked_vent", "VWI_post_vent",
         "pre2post", "level_set", "VWI_pre2post_masked_vent",
@@ -338,6 +388,7 @@ distance_list = []
 dist_norm_list = []
 
 imtype = cycle(["pre", "post"])
+
 etype = cycle(["E", "E1", "E2", "E3", "E4"])
 
 
@@ -484,7 +535,7 @@ for case_id, paths in data.items():
                                     (E4_post_PI_hist, E4_pre_PI_hist, E4_post_PI, E4_pre_PI)]
                        }
                         
-
+    feature_map = {"ventricle" : "vent", "wall":"model", "Pituitary_Infundibulum" : "PI"}
     #dist = 0.0
     for feature, feature_list in list_vent.items():
         count = int(0)
@@ -492,6 +543,18 @@ for case_id, paths in data.items():
         for data_ in feature_list:
             #iim = next(imtype)
             e = next(etype)
+            #print(len(data_))
+            #print(data_[3].shape)
+            #print(params_list[case_id][e][feature_map[feature]] )
+            if (use_kde):
+                kde_pre_fit, kde_pre_grid = kernel_fit_hist(data_[3], data_[1], params_list[case_id][e][feature_map[feature]]["bandwidth"] )
+                pre_hist = [kde_pre_fit,  kde_pre_grid]
+                #print(kde_pre_fit.shape, kde_pre_grid.shape, data_[1][1].shape)
+
+                kde_post_fit, kde_post_grid = kernel_fit_hist(data_[2], data_[0], params_list[case_id][e][feature_map[feature]]["bandwidth"] ) 
+                post_hist = [kde_post_fit,  kde_post_grid]
+
+                data_ = (post_hist, pre_hist, data_[2], data_[3])
             for dist_f in distance_features:
                 dist = distance_function(data_, metric = dist_f, normalize=False)
                 if ( count == 0 ):
@@ -515,7 +578,7 @@ distance_from_E = [  x - 1.0 for x in dist_norm_list]
 
 df = pd.DataFrame({"case_id": case_id_list, "enhancement_type": enhancement_type, "distance_metric":dist_type, "feature":feature_type, "distance":distance_list, "distance_norm": dist_norm_list, "distance_from_E": distance_from_E})
 
-df.to_pickle(os.path.join(write_file_dir, "distance_metrics_df.pkl"))
+df.to_pickle(os.path.join(write_file_dir, distance_file_name))
 
 
 

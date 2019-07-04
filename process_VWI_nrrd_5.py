@@ -10,7 +10,7 @@ from scipy.special import iv
 from scipy.special import factorial2, factorial
 from scipy.special import hyp1f1
 from sklearn.neighbors.kde import KernelDensity
-from sklearn.model_selection import GridSearchCV
+#from sklearn.model_selection import GridSearchCV
 
 
 #from dask.distributed import Client
