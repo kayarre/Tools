@@ -1,10 +1,22 @@
 import vtk
 
+
+def getvtkarray(attribute_type):
+    # assume ints are positive
+    if attribute_type is int:
+        return vtk.vtkUnsignedIntArray()
+    elif attribute_type is float:
+        return vtk.vtkDoubleArray()
+
+
+
 def writeObjects(graph,
                  node_scalar_list = [],
+                 node_vector_list = [],
                  edge_scalar_list = [],
+                 edge_vector_list = [],
                  node_label = '',
-                 edge_label = '',
+                 edge_label = tuple(),
                  method = 'vtkPolyData',
                  fileout = 'test'):
     """
@@ -25,14 +37,28 @@ def writeObjects(graph,
     n_nodes = graph.number_of_nodes()
     points.SetNumberOfPoints(n_nodes)
 
+    node_arrays = {}
     if node_scalar_list:
-        node_arrays = {}
+        
         for scalar_name in node_scalar_list:
             attribute = vtk.vtkDoubleArray()
             attribute.SetName(scalar_name)
             attribute.SetNumberOfComponents(1)
             attribute.SetNumberOfTuples(n_nodes)
             node_arrays[scalar_name] = attribute
+
+    #print(node_vector_list)
+    
+    if node_vector_list:
+        sample_node = list(graph.nodes)[0]
+        for vector_name in node_vector_list:
+            ncomp = len(graph.nodes(data=True)[sample_node][vector_name])
+            attribute = vtk.vtkDoubleArray()
+            attribute.SetName(vector_name)
+            attribute.SetNumberOfComponents(ncomp)
+            attribute.SetNumberOfTuples(n_nodes)
+            node_arrays[vector_name] = attribute
+
 
     if node_label:
         label_nodes = vtk.vtkStringArray()
@@ -46,7 +72,12 @@ def writeObjects(graph,
         points.SetPoint(node, node_data['vertex'])
         if node_scalar_list:
             for scalar_name in node_scalar_list:
-                node_arrays[scalar_name].SetValue(node, node_data[scalar_name])
+                node_arrays[scalar_name].SetTuple(node, node_data[scalar_name])
+
+        if node_vector_list:
+            for vector_name in node_vector_list:
+                node_arrays[vector_name].SetTuple(node, node_data[vector_name])
+                
         if node_label:
             label_nodes.SetValue(node, node_data[node_label])
 
@@ -89,6 +120,9 @@ def writeObjects(graph,
         if node_scalar_list:
             for scalar_name in node_scalar_list:
                 polydata.GetPointData().AddArray(node_arrays[scalar_name])
+        if node_vector_list:
+            for vector_name in node_vector_list:
+                polydata.GetPointData().AddArray(node_arrays[vector_name])
         if edge_scalar_list:
             for scalar_name in edge_scalar_list:
                 polydata.GetCellData().AddArray(edge_arrays[scalar_name])
@@ -109,6 +143,9 @@ def writeObjects(graph,
         if node_scalar_list:
             for scalar_name in node_scalar_list:
                 grid.GetPointData().AddArray(node_arrays[scalar_name])
+        if node_vector_list:
+            for vector_name in node_vector_list:
+                grid.GetPointData().AddArray(node_arrays[vector_name])
         if edge_scalar_list:
             for scalar_name in edge_scalar_list:
                 grid.GetCellData().AddArray(edge_arrays[scalar_name])
@@ -124,9 +161,11 @@ def writeObjects(graph,
 
 def writePolyLine(graph, node_lists,
                  node_scalar_list = [],
-                 edge_scalar_list = [],
+                 node_vector_list = [],
+                 edge_scalar_dict = {},
+                 edge_vector_list = [],
                  node_label = '',
-                 edge_label = '',
+                 edge_label = tuple(),
                  fileout = 'test'):
     """
     Store points and/or graphs as vtkPolyData or vtkUnstructuredGrid.
@@ -146,15 +185,31 @@ def writePolyLine(graph, node_lists,
     points = vtk.vtkPoints()
     n_nodes = graph.number_of_nodes()
     points.SetNumberOfPoints(n_nodes)
-
+    first_node = list(graph.nodes())[0]
+    
+    
     if node_scalar_list:
         node_arrays = {}
+        
         for scalar_name in node_scalar_list:
-            attribute = vtk.vtkDoubleArray()
+            attribute_type = type(graph.nodes(data=True)[first_node][scalar_name][0])
+            attribute = getvtkarray(attribute_type)
+            #attribute = vtk.vtkDoubleArray()
             attribute.SetName(scalar_name)
             attribute.SetNumberOfComponents(1)
             attribute.SetNumberOfTuples(n_nodes)
             node_arrays[scalar_name] = attribute
+
+    if node_vector_list:
+        for vector_name in node_vector_list:
+            ncomp = len(graph.nodes(data=True)[first_node][vector_name])
+            attribute_type = type(graph.nodes(data=True)[first_node][vector_name][0])
+            attribute = getvtkarray(attribute_type)
+            attribute.SetName(vector_name)
+            attribute.SetNumberOfComponents(ncomp)
+            attribute.SetNumberOfTuples(n_nodes)
+            node_arrays[vector_name] = attribute
+
 
     if node_label:
         label_nodes = vtk.vtkStringArray()
@@ -168,7 +223,12 @@ def writePolyLine(graph, node_lists,
         points.SetPoint(node, node_data['vertex'])
         if node_scalar_list:
             for scalar_name in node_scalar_list:
-                node_arrays[scalar_name].SetValue(node, node_data[scalar_name])
+                node_arrays[scalar_name].SetTuple(node, node_data[scalar_name])
+
+        if node_vector_list:
+            for vector_name in node_vector_list:
+                node_arrays[vector_name].SetTuple(node, node_data[vector_name])
+
         if node_label:
             label_nodes.SetValue(node, node_data[node_label])
 
@@ -198,6 +258,44 @@ def writePolyLine(graph, node_lists,
                 polyLine.GetPointIds().SetId(idx,node)
             lines.InsertNextCell(polyLine)
 
+    #edge section
+    n_edges = lines.GetNumberOfCells()
+
+    if edge_scalar_dict:
+        edge_arrays = {}
+        for scalar_name, scalar_list in edge_scalar_dict.items():
+            assert lines.GetNumberOfCells() == len(scalar_list), "not matching the number of cells to the cell information"
+            attribute = vtk.vtkDoubleArray()
+            attribute.SetName(scalar_name)
+            attribute.SetNumberOfComponents(1)
+            attribute.SetNumberOfTuples(n_edges)
+            edge_arrays[scalar_name] = attribute
+            
+            for cell_id in range(lines.GetNumberOfCells()):
+                    edge_arrays[scalar_name].SetValue(cell_id, scalar_list[cell_id])
+
+    if edge_label:
+        label_edges = vtk.vtkStringArray()
+        label_edges.SetName(edge_label[0])
+        label_edges.SetNumberOfValues(n_edges)
+        for cell_id in range(lines.GetNumberOfCells()):
+            label_edges.SetValue(cell_id, edge_label[1][cell_id])
+
+    ## assign edge info
+    #if (n_edges > 0):
+        #lines = vtk.vtkCellArray()
+        #lines.Allocate(n_edges)
+        #for edge in graph.edges():
+            #edge_data = graph.edges[edge]
+            #cell_id = lines.InsertNextCell(2)
+            #lines.InsertCellPoint(edge[0])
+            #lines.InsertCellPoint(edge[1])   # line from point edge[0] to point edge[1]
+            #if edge_scalar_list:
+                #for scalar_name in edge_scalar_list:
+                    #edge_arrays[scalar_name].SetValue(cell_id, edge_data[scalar_name])
+            #if edge_label:
+                #label_edges.SetValue(cell_id, edge_data[edge_label])
+            
         # for edge in graph.edges():
         #     edge_data = graph.edges[edge]
         #     cell_id = lines.InsertNextCell(2)
@@ -217,13 +315,13 @@ def writePolyLine(graph, node_lists,
     if node_scalar_list:
         for scalar_name in node_scalar_list:
             polydata.GetPointData().AddArray(node_arrays[scalar_name])
-    # if edge_scalar_list:
-    #     for scalar_name in edge_scalar_list:
-    #         polydata.GetCellData().AddArray(edge_arrays[scalar_name])
+    if edge_scalar_dict:
+        for key, value in edge_arrays.items():
+            polydata.GetCellData().AddArray(value)
     if node_label:
         polydata.GetPointData().AddArray(label_nodes)
-    # if edge_label:
-    #     polydata.GetCellData().AddArray(label_edges)
+    if edge_label:
+        polydata.GetCellData().AddArray(label_edges)
     writer = vtk.vtkXMLPolyDataWriter()
     writer.SetFileName(fileout+'.vtp')
     writer.SetInputData(polydata)

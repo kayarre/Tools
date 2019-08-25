@@ -5,11 +5,20 @@ import vtk
 import networkx as nx
 import sys
 import copy
+import os
 
 from writeNodesEdges import writeObjects, writePolyLine
 
+
+file_dir  = "/home/sansomk/caseFiles/ultrasound/tcd/case_debaun/vmtk"
+
+read_file = "smooth_CT_507_vmtk_decimate2_hole_trim_ext2_xyz_normals_fuzz_ctrlines_smooth_attr_geom.vtp"
+write_file_1 = "test_ctr_1"
+write_file_2 = "test_ctr_2"
+
 reader = vtk.vtkXMLPolyDataReader()
-reader.SetFileName("/Users/sansomk/caseFiles/ultrasound/tcd/case2/vmtk/case2_vmtk_decimate_hole_ctrlines.vtp")
+#reader.SetFileName("/Users/sansomk/caseFiles/ultrasound/tcd/case2/vmtk/case2_vmtk_decimate_hole_ctrlines.vtp")
+reader.SetFileName(os.path.join(file_dir, read_file))
 reader.Update()
 
 clean = vtk.vtkCleanPolyData()
@@ -29,7 +38,7 @@ for i in range(pd.GetNumberOfPoints()):
     for j in range(pd.GetPointData().GetNumberOfArrays()):
         n_comp = pd.GetPointData().GetArray(j).GetNumberOfComponents()
         if (n_comp == 1):
-            G.nodes[i][pd.GetPointData().GetArrayName(j)] = pd.GetPointData().GetArray(j).GetTuple(i)[0]
+            G.nodes[i][pd.GetPointData().GetArrayName(j)] = pd.GetPointData().GetArray(j).GetTuple(i)
         else:
             G.nodes[i][pd.GetPointData().GetArrayName(j)] = list(pd.GetPointData().GetArray(j).GetTuple(i))
 
@@ -43,10 +52,17 @@ for i in range(pd.GetNumberOfCells()):
 
         G.add_edge(vt1, vt2, weight=squaredDistance**0.5)
 
+arrayNames = []
+for i in range(pd.GetPointData().GetNumberOfArrays()):
+    arrayNames.append(pd.GetPointData().GetArrayName(i))
+    
+print(arrayNames)
+
 writeObjects(G,
     node_scalar_list=["MaximumInscribedSphereRadius"],
+    node_vector_list = ["FrenetTangent"],
     edge_scalar_list=["weight"],
-    fileout="/Users/sansomk/caseFiles/ultrasound/tcd/case2/vmtk/case2_vmtk_decimate_hole_ctrlines_graph")
+    fileout=os.path.join(file_dir, write_file_1))
 
 d1 = 0
 d3 = 0
@@ -86,7 +102,7 @@ while c:
 writePolyLine(G, shift,
     node_scalar_list=["MaximumInscribedSphereRadius"],
     edge_scalar_list=["weight"],
-    fileout="/Users/sansomk/caseFiles/ultrasound/tcd/case2/vmtk/case2_vmtk_decimate_hole_ctrlines_graph_test")
+    fileout=os.path.join(file_dir, write_file_2))
 
 #H = nx.Graph()
 #test_ = dict([ (k, G.nodes(data=True)[k]) for k in key_pair if k in G.nodes])

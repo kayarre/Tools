@@ -35,7 +35,7 @@ def Execute(args):
     mesh2surf.Execute()
     
     scale_cfd = vmtkscripts.vmtkSurfaceScaling()
-    scale_cfd.ScaleFactor = 1000 # meters to mm
+    scale_cfd.ScaleFactor = args.scale # meters to mm
     scale_cfd.Surface = mesh2surf.Surface
     scale_cfd.Execute()
     
@@ -174,6 +174,8 @@ if __name__=='__main__':
                         default = "case_wall_clip")
     parser.add_argument("--margin", dest="margin", type=float, help="specify the global  margin of the clip box", metavar="FLOAT",
                         default = 1.1)
+    parser.add_argument("--scale", dest="scale", type=float, help="specify the mesh scale", metavar="FLOAT",
+                        default = 1000.0)
     args = parser.parse_args()
     #print(args)
     Execute(args)
