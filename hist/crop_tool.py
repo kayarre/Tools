@@ -4,10 +4,24 @@
 import pandas as pd
 import numpy as np
 import os
-import matplotlib.pyplot as plt
 from string import ascii_lowercase
-
 import large_image
+
+import matplotlib
+matplotlib.interactive(True)
+# gui_env = ['Qt5Agg', 'TKAgg','GTKAgg','Qt4Agg','WXAgg', 'MacOSX']
+# for gui in gui_env:
+#     try:
+#         print("testing", gui)
+#         matplotlib.use(gui,warn=False, force=True)
+#         from matplotlib import pyplot as plt
+#         break
+#     except:
+#         continue
+# print("Using:",matplotlib.get_backend())
+
+import matplotlib.pyplot as plt
+
 
 from crop_class import single_crop, crop_data
 
