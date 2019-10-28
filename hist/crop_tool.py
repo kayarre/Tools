@@ -7,8 +7,8 @@ import os
 from string import ascii_lowercase
 import large_image
 
-import matplotlib
-matplotlib.interactive(True)
+#import matplotlib
+#matplotlib.interactive(True)
 # gui_env = ['Qt5Agg', 'TKAgg','GTKAgg','Qt4Agg','WXAgg', 'MacOSX']
 # for gui in gui_env:
 #     try:
@@ -105,7 +105,7 @@ plt.imshow(m_roi)
 
 
 # get a thumbnail no larger than 1024x1024 pixels
-thumbnail, mimeType = image.getThumbnail( width=2048, height=1024, format='numpy')
+thumbnail, mimeType = image.getThumbnail( width=1024, height=1024, format='numpy')
 
 plt.imshow(thumbnail)
 
