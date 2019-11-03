@@ -82,7 +82,7 @@ def line_select_callback(eclick, erelease):
     'eclick and erelease are the press and release events'
     x1, y1 = eclick.xdata, eclick.ydata
     x2, y2 = erelease.xdata, erelease.ydata
-    print("(%3.2f, %3.2f) --> (%3.2f, %3.2f)" % (x1, y1, x2, y2))
+    #print("(%3.2f, %3.2f) --> (%3.2f, %3.2f)" % (x1, y1, x2, y2))
     print("(%3.2f, %3.2f) --> (%3.2f, %3.2f)" % (x1*new_mag,
     y1*new_mag,
     (x2-x1)*new_mag,
@@ -221,6 +221,7 @@ class crop_box(object):
         self.crop_dict[new_label] = dict(region=new_region,
                                          file = self.image_index.image_path
                                          )
+        print(self.crop_dict[new_label])
         #self.print_shit()
     
     def get_dict(self):
@@ -287,7 +288,7 @@ plt.connect('draw_event', mycallback)
 plt.show()
 
 all_crops = cropper.get_dict()
-
+print(all_crops)
 with open('crop_info.pkl', 'wb') as f:
     pickle.dump(all_crops, f)
 
