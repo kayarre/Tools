@@ -10,6 +10,7 @@ and eventrelease are the same.
 """
 from matplotlib.widgets import RectangleSelector
 from matplotlib.widgets import Button
+from matplotlib.widgets import TextBox
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -17,6 +18,7 @@ import pandas as pd
 import os
 #import large_image
 import openslide
+import math
 import string
 import pickle 
 
@@ -29,13 +31,14 @@ file_ext=".svs"
 
 df = pd.read_csv(csv_file)
 
+completed_cases = [1]
 im_id = df[["study", "Image_ID"]]
 
 file_name = []
 full_path = []
 
 for i in df[["study","Image_ID"]].iterrows():
-    
+    #print(i[1]["study"])
     #print(i)
     path_test = os.path.join(proj_dir, "{0}{1:02d}".format(sub_dir,i[1]["study"]), 
                             "{0}{1}".format(i[1]["Image_ID"],file_ext))
@@ -50,33 +53,34 @@ for i in df[["study","Image_ID"]].iterrows():
 df["file_name"] = file_name
 df["full_path"] = full_path
 
-df["file_name"] = file_name
-df["full_path"] = full_path
+df = df[~df["study"].isin(completed_cases)]
 
 study_id = 1
 path_list = list(df["full_path"])
 study_list = list(df["study"])
 case_info = dict(path=path_list, study_id=study_list)
 
-# index_images = 0
 
-# image_path = path_list[index_images]
+def round_up_to_even(f):
+    return math.ceil(f / 2.) * 2
 
-# base_label = os.path.splitext(os.path.split(image_path)[-1])[0]
+def next_power_of_2(n): 
+    count = 0
 
-# image = large_image.getTileSource(image_path)
-# mag = image.getMagnificationForLevel(level=2)
-# print(mag["magnification"])
+    # First n in the below  
+    # condition is for the  
+    # case where n is 0 
+    if (n and not(n & (n - 1))): 
+        return n 
+        
+    while( n != 0): 
+        n >>= 1
+        count += 1
+        
+    return 1 << count
 
-# mag2 = image.getMagnificationForLevel(level=image.getMetadata()['levels']-1)
-
-# im_low_res, er = image.getRegion(
-#     scale=mag,
-#     format=large_image.tilesource.TILE_FORMAT_NUMPY
-# )
-
-# print(mag["magnification"], mag2["magnification"])
-# new_mag = mag2["magnification"] / mag["magnification"]
+def shift_bit_length(x):
+    return 1<<(x-1).bit_length()
 
 class define_rectangle(object):
 
@@ -100,6 +104,8 @@ class define_rectangle(object):
                 self.top, self.width, self.height))
         #print(" The button you used were: %s %s" % (eclick.button, erelease.button))
 
+    def update_mag(self, new_mag):
+        self.new_mag = new_mag
 
 def toggle_selector(event):
     print(' Key pressed.')
@@ -113,7 +119,7 @@ def toggle_selector(event):
 
 class Index(object):
 
-    def __init__(self, current_ax, case_info, fig, line_select):
+    def __init__(self, current_ax, case_info, fig, rectangle):
         self.index_images = 0
         self.new_mag = 0.0
         self.case_info = case_info
@@ -127,16 +133,29 @@ class Index(object):
         self.fig = fig
         self.alphabet = list(string.ascii_lowercase)
 
+        self.thickness = 0.0
+        self.gap = 0.0
+        self.label = self.base_label
+
         self.text_box = self.set_text_box()
         self.init_test = False
+        self.rectangle = rectangle
         self.play()
-        line_select.new_mag = self.new_mag
+    
+    def set_thickness(self, thickness):
+        self.thickness = thickness
+    
+    def set_gap(self, gap):
+        self.gap = gap
+    
+    def set_cur_label(self,label):
+        self.label = label
 
     def set_base_label(self):
         self.base_label = os.path.splitext(os.path.split(self.image_path)[-1])[0]
 
     def set_text_box(self):
-        text_box = current_ax.text(0.05, 0.95,
+        text_box = self.cur_ax.text(0.05, 0.95,
             "study id : {0} base_label: {1}".format(self.image_id, self.base_label),
             transform=self.fig.transFigure, fontsize=12,
             verticalalignment='top'
@@ -172,7 +191,7 @@ class Index(object):
         image  = openslide.open_slide(self.image_path)
         levels = image.level_dimensions
         meta_data = image.properties
-        res_mag =  float(meta_data['aperio.AppMag'])
+        #res_mag =  float(meta_data['aperio.AppMag'])
         level_down = image.level_downsamples
         print(levels, level_down)
         
@@ -184,9 +203,10 @@ class Index(object):
         # divide the highest by it to get the thumbnail size 
         # multiple to get back the correct pixel range info
 
-        self.new_mag = mag2 / mag
-        size_x = int(round(levels[0][0] / self.new_mag))
-        size_y = int(round(levels[0][1]/ self.new_mag))
+        self.new_mag = round(mag2 / mag)
+        self.rectangle.update_mag(self.new_mag)
+        size_x = int(round(levels[0][0] // self.new_mag))
+        size_y = int(round(levels[0][1] // self.new_mag))
 
         print(size_x, size_y)
 
@@ -209,6 +229,11 @@ class Index(object):
             self.update_text()
             self.fig.canvas.draw_idle()
             self.fig.canvas.flush_events()
+    
+    def test_text_box(self, text):
+        print(text)
+        self.label = text
+
 
 class MyRectangleSelector(RectangleSelector):
     def release(self, event):
@@ -227,17 +252,20 @@ class crop_box(object):
         self.rectangle = rectangle
         self.image_index = image_index
         self.crop_dict = {}
+        self.current_label = ""
+        self.cur_thickness = 5.0
+        self.cur_gap = 25.0
         
 
     def save_crop(self, event):
-        self.n_crop += 1
+        
         label = self.image_index.base_label
         extents = [ a * self.image_index.new_mag for a in self.rectangle.extents] 
 
-        left = int(extents[0])
-        width = int(extents[1] - left)
-        top = int(extents[2])
-        height = int(extents[3] - top)
+        left = int(round(extents[0]))
+        width = int(round(extents[1] - left))
+        top = int(round(extents[2]))
+        height = int(round(extents[3] - top))
         new_region = dict(left=left,
                     top=top,
                     width=width,
@@ -250,10 +278,18 @@ class crop_box(object):
             new_label = label + "_" + self.image_index.alphabet.pop(0)
 
         self.crop_dict[new_label] = dict(region=new_region,
-                                         file = self.image_index.image_path
+                                         file = self.image_index.image_path,
+                                         thickness = self.cur_thickness,
+                                         gap = self.cur_gap,
+                                         crop_id = self.n_crop
                                          )
+        self.current_label = new_label
         print(new_label, self.crop_dict[new_label])
         #self.print_shit()
+        self.n_crop += 1
+
+    def get_cur_label(self):
+        return self.current_label
     
     def get_dict(self):
         return self.crop_dict
@@ -271,47 +307,48 @@ class crop_box(object):
         x_sz = (e[1] - e[0]) / 2.0 #+ e[0]
         y_sz = (e[3] - e[2]) / 2.0 #+ e[2]
         #print(self.rectangle.center)
-        sq_d = max([x_sz, x_sz])
+        sq_d = max([x_sz, y_sz])
+        sq_2 = round_up_to_even(sq_d)
+        #sq_2 = shift_bit_length(sq_d)
+        #print(sq_2)
+        #print(next_power_of_2(x_sz), next_power_of_2(y_sz))
+        #sq_2 = next_power_of_2(sq_d)
 
-        x_c = self.rectangle.center[0]
-        y_c = self.rectangle.center[1]
+        x_c = round(self.rectangle.center[0])
+        y_c = round(self.rectangle.center[1])
 
-        left = x_c - sq_d
-        right = x_c + sq_d
-        top = y_c - sq_d
-        bottom = y_c + sq_d
+        left   = x_c - sq_2
+        right  = x_c + sq_2
+        top    = y_c - sq_2
+        bottom = y_c + sq_2
         #print(dir(self.rectangle))
         self.rectangle.extents = (left, right, top, bottom)
-        #print(self.rectangle.extents)
+        print(left, top, right - left, bottom - top)
+    
+    def set_thickness(self, text):
+        self.cur_thickness = float(text)
+    
+    def get_thickness(self):
+        return str(self.cur_thickness)
 
+    def set_gap(self, text):
+        self.cur_gap = float(text)
 
-    # def set_base_label(self):
-    #     self.base_label = os.path.splitext(os.path.split(self.image_path)[-1])[0]
+    def get_gap(self):
+        return str(self.cur_gap)
 
-    # def set_text_box(self):
-    #     text_box = current_ax.text(0.05, 0.95,
-    #     "study id : {0} base_label: {1}".format(study_id,base_label),
-    #     transform=fig.transFigure, fontsize=12,
-    #     verticalalignment='top'
 fig, current_ax = plt.subplots()                 # make a new plotting range
 #current_ax.imshow(im_low_res)
 current_ax.set_autoscaley_on(True)
 current_ax.set_autoscalex_on(True)
-#current_ax.axis('off')
-#                          )
-#N = 100000                                       # If N is large one can see
-#x = np.linspace(0.0, 10.0, N)                    # improvement by use blitting!
 
-#plt.plot(x, +np.sin(.2*np.pi*x), lw=3.5, c='b', alpha=.7)  # plot something
-#plt.plot(x, +np.cos(.2*np.pi*x), lw=3.5, c='r', alpha=.5)
-#plt.plot(x, -np.sin(.2*np.pi*x), lw=3.5, c='g', alpha=.3)
-#button_axes = plt.axes([0.0, 0.0, 0.1, 0.1])
+
 line_select = define_rectangle()
 callback = Index(current_ax, case_info, fig, line_select)
-axprev = plt.axes([0.65, 0.05, 0.07, 0.07])
-axnext = plt.axes([0.73, 0.05, 0.07, 0.07])
-axsave = plt.axes([0.81, 0.05, 0.07, 0.07])
-axsquare = plt.axes([0.89, 0.05, 0.07, 0.07])
+axprev   = fig.add_axes([0.65, 0.05, 0.07, 0.07])
+axnext   = fig.add_axes([0.73, 0.05, 0.07, 0.07])
+axsave   = fig.add_axes([0.81, 0.05, 0.07, 0.07])
+axsquare = fig.add_axes([0.89, 0.05, 0.07, 0.07])
 
 bnext = Button(axnext, 'Next')
 bnext.on_clicked(callback.next)
@@ -344,6 +381,14 @@ bsquare.on_clicked(cropper.make_square)
 
 plt.connect('key_press_event', toggle_selector)
 plt.connect('draw_event', mycallback)
+
+axtext = fig.add_axes([0.75, 0.92, 0.2, 0.050])
+text_box = TextBox(axtext, 'thickness', initial=cropper.get_thickness())
+text_box.on_submit(cropper.set_thickness)
+
+axtext2 = fig.add_axes([0.75, 0.85, 0.2, 0.050])
+text_box2 = TextBox(axtext2, 'gap', initial=cropper.get_gap())
+text_box2.on_submit(cropper.set_gap)
 
 #start_button.on_clicked(play)
 
