@@ -20,7 +20,8 @@ import os
 import openslide
 import math
 import string
-import pickle 
+import pickle
+import os
 
 #proj_dir = "/Volumes/muffins/vwi_proj"
 proj_dir = "/Volumes/SD/caseFiles/vwi_proj"
@@ -52,6 +53,9 @@ for i in df[["study","Image_ID"]].iterrows():
 
 df["file_name"] = file_name
 df["full_path"] = full_path
+
+#df.to_pickle(os.path.join(proj_dir, "process_df.pkl"))
+#quit()
 
 df = df[~df["study"].isin(completed_cases)]
 
@@ -396,6 +400,6 @@ plt.show()
 
 all_crops = cropper.get_dict()
 print(all_crops)
-with open('crop_info.pkl', 'wb') as f:
+with open(os.path.join(proj_dir, 'crop_info.pkl'), 'wb') as f:
     pickle.dump(all_crops, f)
 
