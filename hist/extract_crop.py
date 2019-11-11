@@ -8,20 +8,75 @@ import logging
 logging.basicConfig(level=logging.WARNING)
 #logging.basicConfig(level=logging.DEBUG)
 
-# this will create all cropped images
 
-df_path = "/Volumes/SD/caseFiles/vwi_proj/process_df.pkl"
-df = pd.read_pickle(df_path)
+
+top_dir = "/media/store/krs/caseFiles"
+
+# this tool will create all cropped images
+
+
+# this df contains all the case information
+df_name = "process_df.pkl"
+#df_path = "/Volumes/SD/caseFiles/vwi_proj"
+df_file_path = os.path.join(top_dir, df_name)
+df = pd.read_pickle(df_file_path)
+
+
 #print(df.head())
 #print(df["Image_ID"].values.dtype)
 
-file_name = "crop_info_study_1.pkl"
-crop_info = pickle.load( open(file_name , "rb" ) )
+# this file_namethe case 1 crop info
+# this is actual pickle, not df
+
+file_name_crop = os.path.join(top_dir,"crop_info_study_1.pkl")
+crop_info = pickle.load( open(file_name_crop , "rb" ) )
+
+relabel_paths = True
+in_dir = "vwi_proj"
+out_dir = 'vwi_proc'
+
+in_dir_path = os.path.join(top_dir, in_dir)
+out_dir_top = os.path.join(top_dir, out_dir)
 
 
-out_dir = '/Volumes/SD/caseFiles/vwi_proc'
-low_res = '/Volumes/SD/caseFiles/vwi_low_res'
+
 study_id = "1"
+
+overwrite_files = False
+
+if (relabel_paths == True):
+    # only overwrite if all the files exist in the new location
+    overwrite_on_exist = True
+    for key, data in crop_info.items():
+        file_split = os.path.split(data["file"])
+        
+        case_dir = os.path.split(file_split[0])[-1]
+        new_path = os.path.join(in_dir_path, case_dir, file_split[-1])
+        #print(new_path)
+        crop_info[key]["file"] = new_path
+
+        from_all_list = df[df["full_path"] == data["file"]]["full_path"].values
+
+        if (len(from_all_list) > 0):
+            
+            df.loc[df["full_path"] == data["file"], "full_path"] = new_path
+
+            #from_new = df[df["full_path"] == new_path]["full_path"].values[0]
+
+            try:
+                with open(new_path, 'rb') as f:
+                    overwrite_on_exist = False
+                    pass
+            except IOError:
+                print("File not accessible {0}".format(new_path))
+
+        #print(from_all)
+        #print(from_new)
+        if ((overwrite_on_exist == True) and  (overwrite_files == True)):
+            print ("warning overwriting location of the image files")
+            df.to_pickle(df_file_path)
+            with open(df_file_path, 'wb') as handle:
+                pickle.dump(crop_info, handle)
 
 n_pages = 9 # number of additional resolutions
 
@@ -109,8 +164,7 @@ for crop_data in sorted_crop:
     split_path = os.path.split(data['file'])
     #file_name = os.path.splitext(split_path[-1])[0]
     next_dir = os.path.split(split_path[0])[-1]
-    out_dir_path = os.path.join(out_dir, next_dir)
-    low_res_path = os.path.join(low_res, next_dir)
+    out_dir_path = os.path.join(out_dir_top, next_dir)
     #print(out_dir_path)
     new_file_name = "case_{1}_im_{0}_{2}.tiff".format(data["crop_id"],
                                                               study_id,
@@ -275,8 +329,8 @@ df_test["yres"] = y_res_list
 df_test["mpp-x"] = mpp_x_list
 df_test["mpp-y"] = mpp_y_list
 
-df_test.to_csv(os.path.join(out_dir,  "case_1.csv"))
-df_test.to_pickle(os.path.join(out_dir, "case_1.pkl"))
+df_test.to_csv(os.path.join(top_dir,  "case_1.csv"))
+df_test.to_pickle(os.path.join(top_dir, "case_1.pkl"))
 
 # need to figure out the command to embed a picture in a larger picture
 # only care about shifting the first image I think
