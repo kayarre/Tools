@@ -10,7 +10,8 @@ logging.basicConfig(level=logging.WARNING)
 
 
 
-top_dir = "/media/store/krs/caseFiles"
+#top_dir = "/media/store/krs/caseFiles"
+top_dir = "/Volumes/SD/caseFiles"
 
 # this tool will create all cropped images
 
@@ -166,10 +167,9 @@ for crop_data in sorted_crop:
     next_dir = os.path.split(split_path[0])[-1]
     out_dir_path = os.path.join(out_dir_top, next_dir)
     #print(out_dir_path)
-    new_file_name = "case_{1}_im_{0}_{2}.tiff".format(data["crop_id"],
-                                                              study_id,
-                                                              crop_key
-                                                      )
+
+    new_file_name = "case_{0}_im_{1:04d}.tiff".format(study_id, data["crop_id"])
+
     crop_names.append(new_file_name)
     out_file = os.path.join(out_dir_path, new_file_name)
 
