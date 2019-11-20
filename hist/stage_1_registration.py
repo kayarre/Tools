@@ -3,7 +3,7 @@ import pickle
 import numpy as np
 import tifffile as tiff
 import SimpleITK as sitk
-import itk
+#import itk
 
 # from ipywidgets import interact, fixed
 # from IPython.display import clear_output
@@ -12,11 +12,11 @@ import logging
 logging.basicConfig(level=logging.WARNING)
 #logging.basicConfig(level=logging.DEBUG)
 
-from utils #import get_sitk_image, display_images
+import utils #import get_sitk_image, display_images
 
 
 # n_max is the maxmimum picture size for registration
-def stage_1_transform(reg_dict, n_max):
+def stage_1_transform(reg_dict, n_max, count=0):
     #print(fixed[1]["crop_paths"])
     ff_path = reg_dict["f_row"]["crop_paths"]
     tf_path = reg_dict["t_row"]["crop_paths"]
@@ -51,8 +51,8 @@ def stage_1_transform(reg_dict, n_max):
                                                       t_sitk, 
                                                       sitk.Euler2DTransform(), 
                                                       sitk.CenteredTransformInitializerFilter.MOMENTS)
-    trans = initial_transform.GetParameters()
-    center = initial_transform.GetFixedParameters()
+    #trans = initial_transform.GetParameters()
+    #center = initial_transform.GetFixedParameters()
 
     # get the best one over 30 rotationss
     n_angles = np.linspace(0.0, 2.0*np.pi * 31.0/32.0, 32)
@@ -114,7 +114,8 @@ def stage_1_transform(reg_dict, n_max):
             best_reg = dict( angle = angle,
                             transform = final_transform,
                             measure = measure,
-                            stop_cond = reg_method.GetOptimizerStopConditionDescription()
+                            stop_cond = reg_method.GetOptimizerStopConditionDescription(),
+                            tiff_page = page # this contains the page from the tiff file
                             )
         print(measure, reg_method.GetOptimizerStopConditionDescription())
         # t_resampled = sitk.Resample(t_sitk, f_sitk,
@@ -126,41 +127,42 @@ def stage_1_transform(reg_dict, n_max):
         # f_rescale = sitk.RescaleIntensityImageFilter()
         # f_rescale.SetOutputMaximum(1)
         # f_rescale.SetOutputMinimum(0)
-
-    print(best_reg["transform"])
+    
+    #2,(reg_dict["f_page"][0]["scale_x"], reg_dict["f_page"][0]["scale_y"]))
     print('Final metric value: {0}'.format(best_reg["measure"]))
     print('Optimizer\'s stopping condition, {0}'.format(best_reg["stop_cond"]))
 
-    moving_resampled = sitk.Resample(t_sitk, f_sitk,
-                                     best_reg["transform"], sitk.sitkLinear,
-                                     0.0, t_sitk.GetPixelID())
+    # moving_resampled = sitk.Resample(t_sitk, f_sitk,
+    #                                  best_reg["transform"], sitk.sitkLinear,
+    #                                  0.0, t_sitk.GetPixelID())
 
     # utils.display_images_with_alpha(alpha = (0.0, 1.0, 0.05),
     #                           fixed = f_sitk, moving = t_sitk)
 
-    utils.display_images(fixed_npa = sitk.GetArrayViewFromImage(f_sitk),
-                   moving_npa = sitk.GetArrayViewFromImage(moving_resampled))
+    # utils.display_images(fixed_npa = sitk.GetArrayViewFromImage(f_sitk),
+    #                moving_npa = sitk.GetArrayViewFromImage(moving_resampled))
 
-    # im_test = resample(t_sitk, rot)
-    # myshow(im_test)
-    print("test")
 
     
     #print(stuff)
     #stuff = {}
     #return stuff
-    if (best_reg["measure"] > -0.45):
-        #basically this isn't goog enough so try at higher resolution
-        # increase resolution
-        new_max = n_max*2.0
-        if (new_max <= reg_dict["f_page"][0]['size_x'] ):
-            print("increasing the image resolution to {0}".format(new_max))
-            best_reg = stage_1_transform(reg_dict, new_max)
+    while (best_reg["measure"] > -0.45):
+        # try one more time
+        if(count <= 0):
+            best_reg = stage_1_transform(reg_dict, n_max, 1)
         else:
-            print("I have run out of resolution")
-            return best_reg
-    else:
-        return best_reg
+            #basically this isn't goog enough so try at higher resolution
+            new_max = n_max*2.0
+            if (new_max <= reg_dict["f_page"][0]['size_x'] ):
+                print("Increasing the image resolution to {0}".format(new_max))
+                best_reg = stage_1_transform(reg_dict, new_max, 0)
+            else:
+                print("I have run out of resolution")
+                break
+
+    return best_reg
+
 
 
 

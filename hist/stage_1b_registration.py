@@ -3,6 +3,7 @@ import pickle
 import numpy as np
 import tifffile as tiff
 import SimpleITK as sitk
+#import itk
 
 # from ipywidgets import interact, fixed
 # from IPython.display import clear_output
@@ -11,11 +12,11 @@ import logging
 logging.basicConfig(level=logging.WARNING)
 #logging.basicConfig(level=logging.DEBUG)
 
-import utils #import get_sitk_image, display_images, start_plo
+import utils #import get_sitk_image, display_images
 
 
 # n_max is the maxmimum picture size for registration
-def stage_2_transform(reg_dict, n_max, initial_transform, count=0):
+def stage_1b_transform(reg_dict, n_max, initial_transform, count=0):
     #print(fixed[1]["crop_paths"])
     ff_path = reg_dict["f_row"]["crop_paths"]
     tf_path = reg_dict["t_row"]["crop_paths"]
@@ -35,59 +36,37 @@ def stage_2_transform(reg_dict, n_max, initial_transform, count=0):
     # transform numpy array to simpleITK image
     # have set the parameters manually
     im_f = tiff.imread(ff_path, key=page_idx)
-    #f_cog = get_center_of_gravity(im_f, spacing)
     f_sitk = utils.get_sitk_image(im_f, spacing)
 
     im_t = tiff.imread(tf_path, key=page_idx)
     t_sitk = utils.get_sitk_image(im_t, spacing)
 
-    # does the copy constructor work?
-    transformCopy = initial_transform["transform"]
-    
-    in_params = list(transformCopy.GetParameters())
-    fixed_in_params = transformCopy.GetFixedParameters()
-   
-    similarity = sitk.Similarity2DTransform(1.0, in_params[0], in_params[1:], fixed_in_params)
-
-    affine = sitk.AffineTransform(similarity.GetDimension())
-    affine.SetMatrix(similarity.GetMatrix())
-    affine.SetTranslation(similarity.GetTranslation())
-    affine.SetCenter(similarity.GetCenter())
-    #affine.SetCenter(in_params[1:])
-    # I think this is the center for 2D euler transform
-    # composite = sitk.Transform(transformCopy.GetDimension(), sitk.sitkComposite)
-    # composite.AddTransform(affine)
-    # composite.AddTransform(transformCopy)
-
-    # reg_method = sitk.ElastixImageFilter()
-    # reg_method.SetInitialTransform(transformCopy, inPlace=False)
-    # reg_method.SetParameterMap(sitk.GetDefaultParameterMap('translation'))
-    # reg_method.AddParameterMap(sitk.GetDefaultParameterMap('affine'))
-    #sitk.PrintParameterMap(sitk.GetDefaultParameterMap('affine'))
-
-    #quit()
-
-    #bin_est = np.sqrt(np.prod(t_sitk.GetSize())/5.0)
-    bin_est = 50
-
     reg_method = sitk.ImageRegistrationMethod()
 
     # Similarity metric settings.
-    reg_method.SetMetricAsMattesMutualInformation(numberOfHistogramBins=bin_est)
+    reg_method.SetMetricAsMattesMutualInformation(numberOfHistogramBins=50)
     reg_method.SetMetricSamplingStrategy(reg_method.RANDOM) #REGULAR
     reg_method.SetMetricSamplingPercentage(0.2)
     reg_method.SetInterpolator(sitk.sitkLinear)
 
     # Optimizer settings.
     reg_method.SetOptimizerAsGradientDescent(learningRate=0.8,
-                                            numberOfIterations=200,
-                                            convergenceMinimumValue=1e-8,
+                                            numberOfIterations=1000,
+                                            convergenceMinimumValue=1e-10,
                                             convergenceWindowSize=20)
     reg_method.SetOptimizerScalesFromPhysicalShift()
 
     # Setup for the multi-resolution framework.            
-    reg_method.SetShrinkFactorsPerLevel(shrinkFactors =     [8, 8, 4, 4, 2, 2, 1, 1])
-    reg_method.SetSmoothingSigmasPerLevel(smoothingSigmas = [0.5, 0.0, 0.5, 0.0, 0.5, 0.0, 0.5, 0.0])
+    reg_method.SetShrinkFactorsPerLevel(shrinkFactors =     [16, 16, 8, 8, 4, 4, 2, 2, 1, 1])
+    # reg_method.SetSmoothingSigmasPerLevel(smoothingSigmas = [3.0, 2.72727273, 2.45454545, 2.18181818, 
+    #                                                         1.90909091, 1.63636364, 1.36363636, 
+    #                                                         1.09090909, 0.81818182, 0.54545455, 
+    #                                                         0.27272727, 0.0])
+    # reg_method.SetSmoothingSigmasPerLevel(smoothingSigmas = [1.96      , 1.78181818, 1.60363636, 1.42545455, 1.24727273,
+    #                                                         1.06909091, 0.89090909, 0.71272727, 0.53454545, 0.35636364,
+    #                                                         0.17818182, 0.        ])
+    #reg_method.SetSmoothingSigmasPerLevel(smoothingSigmas = [2., 1., 0., 2., 1., 0., 2., 1., 0., 2., 1., 0.])
+    reg_method.SetSmoothingSigmasPerLevel(smoothingSigmas = [0.5, 0.0, 0.5, 0.0, 0.5, 0.0, 0.5, 0.0, 0.5, 0.])
     reg_method.SmoothingSigmasAreSpecifiedInPhysicalUnitsOn()
 
     # Connect all of the observers so that we can perform plotting during registration.
@@ -95,7 +74,7 @@ def stage_2_transform(reg_dict, n_max, initial_transform, count=0):
     reg_method.AddCommand(sitk.sitkEndEvent, lambda: utils.end_plot(0.0))
     reg_method.AddCommand(sitk.sitkMultiResolutionIterationEvent, utils.update_multires_iterations) 
     reg_method.AddCommand(sitk.sitkIterationEvent, lambda: utils.plot_values(reg_method))
-    reg_method.SetInitialTransform(affine, inPlace=False)
+    reg_method.SetInitialTransform(initial_transform["transform"], inPlace=False)
 
     min_metric = 9999999.0
     exception = True
@@ -120,14 +99,8 @@ def stage_2_transform(reg_dict, n_max, initial_transform, count=0):
                         stop_cond = reg_method.GetOptimizerStopConditionDescription(),
                         tiff_page = page # this contains the page from the tiff file
                         )
-    #print(measure, reg_method.GetOptimizerStopConditionDescription())
-    # t_resampled = sitk.Resample(t_sitk, f_sitk,
-    #                              final_transform, sitk.sitkLinear,
-    #                              0.0, t_sitk.GetPixelID())
-    # utils.display_images(fixed_npa = sitk.GetArrayViewFromImage(f_sitk),
-    #            moving_npa = sitk.GetArrayViewFromImage(t_resampled))
 
-    print(best_reg["transform"])
+    #2,(reg_dict["f_page"][0]["scale_x"], reg_dict["f_page"][0]["scale_y"]))
     print('Final metric value: {0}'.format(best_reg["measure"]))
     print('Optimizer\'s stopping condition, {0}'.format(best_reg["stop_cond"]))
 
@@ -135,15 +108,9 @@ def stage_2_transform(reg_dict, n_max, initial_transform, count=0):
                                      best_reg["transform"], sitk.sitkLinear,
                                      0.0, t_sitk.GetPixelID())
 
-    # display_images_with_alpha(alpha = (0.0, 1.0, 0.05),
-    #                           fixed = f_sitk, moving = t_sitk)
-
     utils.display_images(fixed_npa = sitk.GetArrayViewFromImage(f_sitk),
                    moving_npa = sitk.GetArrayViewFromImage(moving_resampled))
 
-    # im_test = resample(t_sitk, rot)
-    # myshow(im_test)
-    print("test")
 
     
     #print(stuff)
@@ -152,15 +119,16 @@ def stage_2_transform(reg_dict, n_max, initial_transform, count=0):
     while (best_reg["measure"] > -0.45):
         # try one more time
         if(count <= 0):
-            best_reg = stage_2_transform(reg_dict, n_max, initial_transform, 1)
+            best_reg = stage_1_transform(reg_dict, n_max, 1)
         else:
             #basically this isn't goog enough so try at higher resolution
             new_max = n_max*2.0
             if (new_max <= reg_dict["f_page"][0]['size_x'] ):
                 print("Increasing the image resolution to {0}".format(new_max))
-                best_reg = stage_2_transform(reg_dict, new_max, initial_transform, 0)
+                best_reg = stage_1_transform(reg_dict, new_max, 0)
             else:
                 print("I have run out of resolution")
                 break
 
     return best_reg
+

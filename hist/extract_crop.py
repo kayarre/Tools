@@ -10,8 +10,8 @@ logging.basicConfig(level=logging.WARNING)
 
 
 
-#top_dir = "/media/store/krs/caseFiles"
-top_dir = "/Volumes/SD/caseFiles"
+top_dir = "/media/store/krs/caseFiles"
+#top_dir = "/Volumes/SD/caseFiles"
 
 # this tool will create all cropped images
 
@@ -33,6 +33,7 @@ file_name_crop = os.path.join(top_dir,"crop_info_study_1.pkl")
 crop_info = pickle.load( open(file_name_crop , "rb" ) )
 
 relabel_paths = True
+
 in_dir = "vwi_proj"
 out_dir = 'vwi_proc'
 
@@ -78,6 +79,7 @@ if (relabel_paths == True):
             df.to_pickle(df_file_path)
             with open(df_file_path, 'wb') as handle:
                 pickle.dump(crop_info, handle)
+
 
 n_pages = 9 # number of additional resolutions
 
@@ -150,6 +152,8 @@ df_test = pd.DataFrame(data_list, columns =["case_id", "slice_name",
 
 crop_stack = []
 crop_names = []
+color_stack = []
+color_names = []
 in_stack = []
 mag_list = []
 #mag2_list =[]
@@ -169,11 +173,15 @@ for crop_data in sorted_crop:
     #print(out_dir_path)
 
     new_file_name = "case_{0}_im_{1:04d}.tiff".format(study_id, data["crop_id"])
+    color_file_name = "color_case_{0}_im_{1:04d}.tiff".format(study_id, data["crop_id"])
 
     crop_names.append(new_file_name)
     out_file = os.path.join(out_dir_path, new_file_name)
-
     crop_stack.append(out_file)
+
+    color_names.append(color_file_name)
+    color_file = os.path.join(out_dir_path, color_file_name)
+    color_stack.append(color_file)
 
     if not os.path.exists(out_dir_path):
         os.makedirs(out_dir_path)
@@ -199,10 +207,12 @@ for crop_data in sorted_crop:
 
 df_test["crop_names"] = crop_names
 df_test["crop_paths"] = crop_stack
+df_test["color_names"] = color_names
+df_test["color_paths"] = color_stack
 df_test["base_mag"] = mag_list
 
 
-#df_test.to_csv( "case_1.csv")
+#df_test.to_csv("case_1.csv")
 #quit()
 mpp_x_list = []
 mpp_y_list = []
@@ -220,7 +230,7 @@ df_test["base_height"] = n_pow2
 df_test["n_tiles"] = n_tiles
 
 #logging.basicConfig(level=logging.DEBUG)
-for f_in, region, im_out in zip(in_stack, region_list, crop_stack):
+for f_in, region, im_out, color_out in zip(in_stack, region_list, crop_stack, color_stack):
     print("reading {0}".format(f_in))
     if (f_in != cur_file):
         im = pyvips.Image.new_from_file(f_in, access='sequential')
@@ -244,8 +254,6 @@ for f_in, region, im_out in zip(in_stack, region_list, crop_stack):
     shift_y = (n_pow2 - height) // 2
 
     crop = im.extract_area(left, top, width, height)
-
-    blank_color = pyvips.Image.black(n_pow2, n_pow2, bands = 1)
     
     r, g, b, a = crop.bandsplit()
     # r = crop.extract_band(0).cast("ushort")
@@ -260,8 +268,13 @@ for f_in, region, im_out in zip(in_stack, region_list, crop_stack):
     blank = gray.embed(
                     shift_x, shift_y,
                     blank.get("width"), blank.get("height"),
-                    extend="VIPS_EXTEND_WHITE")
-                    #extend="VIPS_EXTEND_COPY")
+                    extend="VIPS_EXTEND_COPY")
+    color = pyvips.Image.black(n_pow2, n_pow2, bands = 3)
+    color = crop.embed(
+                    shift_x, shift_y,
+                    color.get("width"), color.get("height"),
+                    #extend="VIPS_EXTEND_WHITE")
+                    extend="VIPS_EXTEND_COPY")
 
     invert = blank.invert()
 
@@ -302,6 +315,7 @@ for f_in, region, im_out in zip(in_stack, region_list, crop_stack):
     test = invert.copy(xres = x_res,
                        yres = y_res,
                        )
+    
     test.set_type(pyvips.GValue.gstr_type, "resolution-unit", "mm")
     for field, data in im_dict.items():
         test.set_type(data[0], field, data[1])
@@ -315,6 +329,22 @@ for f_in, region, im_out in zip(in_stack, region_list, crop_stack):
                 tile_height=n_pow2 // (2**n_pages),
                 pyramid=True)#, resunit="mm")
 
+    test_color = color.copy(xres = x_res,
+                            yres = y_res,
+                           )
+    
+    test_color.set_type(pyvips.GValue.gstr_type, "resolution-unit", "mm")
+    for field, data in im_dict.items():
+        test_color.set_type(data[0], field, data[1])
+        #print(field, test.get(field))
+
+    print("writing color {0}".format(color_out))
+    test_color.tiffsave(color_out, compression = "VIPS_FOREIGN_TIFF_COMPRESSION_DEFLATE",
+                properties=True, strip=False,
+                tile=True,
+                tile_width=n_pow2 // (2**n_pages),
+                tile_height=n_pow2 // (2**n_pages),
+                pyramid=True)#, resunit="mm")
     # create an image of size 
 
     
@@ -340,4 +370,4 @@ df_test.to_pickle(os.path.join(top_dir, "case_1.pkl"))
 
 # start with extracting the bands
 
-#print(coordinates)
+#print(coordinates

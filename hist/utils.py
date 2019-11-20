@@ -156,23 +156,127 @@ def myshow(img, title=None, margin=0.05, dpi=80):
         plt.title(title)
     plt.show()
 
-def resample(image, transform, default_value=0.0):
+def resample(image, transform, default_value=0.0, interpolator = sitk.sitkCosineWindowedSinc, ref_image = None):
     # Output image Origin, Spacing, Size, Direction are taken from the reference
     # image in this call to Resample
-    reference_image = image
-    interpolator = sitk.sitkCosineWindowedSinc
+    if (ref_image == None):
+        reference_image = image
+    else:
+        reference_image = ref_image
     return sitk.Resample(image, reference_image, transform,
                          interpolator, default_value)
 
-def get_center_of_gravity(np_image, spacing):
-    f_itk = itk.GetImageFromArray(np_image)
-    f_itk.SetSpacing(spacing)
-    f_moments = itk.ImageMomentsCalculator.New(f_itk)
-    f_moments.Compute()
-    return f_moments.GetCenterOfGravity()
+def resampler(ref_image, transform, default_value=0.0, interpolator = sitk.sitkCosineWindowedSinc):
+    # Output image Origin, Spacing, Size, Direction are taken from the reference
+    # image in this call to Resample
+    resampler = sitk.ResampleImageFilter()
+    resampler.SetReferenceImage(ref_image)
+    resampler.SetInterpolator(interpolator)
+    resampler.SetDefaultPixelValue(default_value)
+    resampler.SetTransform(transform)
+    return resampler
 
-def get_sitk_image(np_image, spacing=(1.0, 1.0), origin=(0.0,0.0)):
-    f_sitk = sitk.GetImageFromArray(np_image)
+# def get_center_of_gravity(np_image, spacing):
+#     f_itk = itk.GetImageFromArray(np_image)
+#     f_itk.SetSpacing(spacing)
+#     f_moments = itk.ImageMomentsCalculator.New(f_itk)
+#     f_moments.Compute()
+#     return f_moments.GetCenterOfGravity()
+
+def get_sitk_image(np_image, spacing=(1.0, 1.0), origin=(0.0,0.0), vector=False):
+    f_sitk = sitk.GetImageFromArray(np_image, isVector=vector)
     f_sitk.SetSpacing(spacing)
     f_sitk.SetOrigin(origin)
     return f_sitk
+
+
+def print_transformation_differences(tx1, tx2):
+    """
+    Check whether two transformations are "equivalent" in an arbitrary spatial region 
+    either 3D or 2D, [x=(-10,10), y=(-100,100), z=(-1000,1000)]. This is just a sanity check, 
+    as we are just looking at the effect of the transformations on a random set of points in
+    the region.
+    """
+    if tx1.GetDimension()==2 and tx2.GetDimension()==2:
+        bounds = [(-10,10),(-100,100)]
+    elif tx1.GetDimension()==3 and tx2.GetDimension()==3:
+        bounds = [(-10,10),(-100,100), (-1000,1000)]
+    else:
+        raise ValueError('Transformation dimensions mismatch, or unsupported transformation dimensionality')
+    num_points = 10
+    point_list = uniform_random_points(bounds, num_points)
+    tx1_point_list = [ tx1.TransformPoint(p) for p in point_list]
+    differences = target_registration_errors(tx2, point_list, tx1_point_list)
+    print(tx1.GetName()+ '-' +
+          tx2.GetName()+
+          ':\tminDifference: {:.2f} maxDifference: {:.2f}'.format(min(differences), max(differences)))
+
+def uniform_random_points(bounds, num_points):
+    """
+    Generate random (uniform withing bounds) nD point cloud. Dimension is based on the number of pairs in the bounds input.
+    
+    Args:
+        bounds (list(tuple-like)): list where each tuple defines the coordinate bounds.
+        num_points (int): number of points to generate.
+    
+    Returns:
+        list containing num_points numpy arrays whose coordinates are within the given bounds.
+    """
+    internal_bounds = [sorted(b) for b in bounds]
+         # Generate rows for each of the coordinates according to the given bounds, stack into an array, 
+         # and split into a list of points.
+    mat = np.vstack([np.random.uniform(b[0], b[1], num_points) for b in internal_bounds])
+    return list(mat[:len(bounds)].T)
+
+def target_registration_errors(tx, point_list, reference_point_list):
+    """
+    Distances between points transformed by the given transformation and their
+    location in another coordinate system. When the points are only used to evaluate
+    registration accuracy (not used in the registration) this is the target registration
+    error (TRE).
+    """
+    return [np.linalg.norm(np.array(tx.TransformPoint(p)) -  np.array(p_ref))
+          for p,p_ref in zip(point_list, reference_point_list)]
+
+
+
+def affine_scale(transform, x_scale=3.0, y_scale=0.7):
+    dimension = transform.GetDimension()
+    new_transform = sitk.AffineTransform(transform)
+    matrix = np.array(transform.GetMatrix()).reshape((dimension,dimension))
+    matrix[0,0] = x_scale
+    matrix[1,1] = y_scale
+    new_transform.SetMatrix(matrix.ravel())
+    resampled = resample(grid, new_transform)
+    myshow(resampled, 'Scaled')
+    print(matrix)
+    return new_transform
+
+def affine_translate(transform, x_translation=3.1, y_translation=4.6):
+    new_transform = sitk.AffineTransform(transform)
+    new_transform.SetTranslation((x_translation, y_translation))
+    resampled = resample(grid, new_transform)
+    myshow(resampled, 'Translated')
+    return new_transform
+
+def affine_rotate(transform, degrees=15.0):
+    dimension = transform.GetDimension()
+    parameters = np.array(transform.GetParameters())
+    new_transform = sitk.AffineTransform(transform)
+    matrix = np.array(transform.GetMatrix()).reshape((dimension,dimension))
+    radians = -np.pi * degrees / 180.
+    rotation = np.array([[np.cos(radians), -np.sin(radians)],[np.sin(radians), np.cos(radians)]])
+    new_matrix = np.dot(rotation, matrix)
+    new_transform.SetMatrix(new_matrix.ravel())
+    print(new_matrix)
+    return new_transform
+ 
+def affine_shear(transform, x_shear=0.3, y_shear=0.1):
+    dimension = transform.GetDimension()
+    new_transform = sitk.AffineTransform(transform)
+    matrix = np.array(transform.GetMatrix()).reshape((dimension,dimension))
+    matrix[0,1] = -x_shear
+    matrix[1,0] = -y_shear
+    new_transform.SetMatrix(matrix.ravel())
+    print(matrix)
+    return new_transform
