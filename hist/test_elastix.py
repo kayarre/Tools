@@ -3,38 +3,6 @@ import tifffile as tiff
 import utils
 import numpy as np
 
-from io import StringIO
-from contextlib import redirect_stdout
-import io
-
-import sys
-
-class Capturing(list):
-    def __enter__(self):
-        self._stdout = sys.stdout
-        sys.stdout = self._stringio = StringIO()
-        return self
-    def __exit__(self, *args):
-        self.extend(self._stringio.getvalue().splitlines())
-        del self._stringio    # free up some memory
-        sys.stdout = self._stdout
-
-
-def getElastixParameters(fileContents, fieldName, type="text"):
-  parameterLine = next(s for s in fileContents if "("+fieldName+" " in s)
-  if type == "text":
-      import shlex # use shlex split (instead of regular split) to preserve spaces in quoted string
-      parameters = shlex.split(parameterLine.strip("()"))
-      parameters.pop(0) # remove fieldName
-  else:
-      parameters = parameterLine.strip("()").split(" ")
-      parameters.pop(0) # remove fieldName
-      if type == "float":
-          parameters = [ float(x) for x in parameters ]
-      elif type == "int":
-          parameters = [ int(x) for x in parameters ]
-  return parameters
-
 
 #fixed = "/media/store/krs/caseFiles/vwi_proc/case01/color_case_1_im_0000.tiff"
 
@@ -77,20 +45,17 @@ print( elastix.GetNumberOfMovingImages())
 rigid = sitk.GetDefaultParameterMap("rigid")
 rigid["DefaultPixelValue"] = ['255']
 rigid["WriteResultImage"] = ['false']
-#rigid["TransformParameters"]  = ["0.180993", "-1.74626", "8.08803"]
+rigid["TransformParameters"]  = ["0.180993", "-1.74626", "8.08803"]
 #rigid["CenterOfRotationPoint"]  = ["257.55", "257.55"]
-output = []
+#print(help(rigid))
 
-f = io.StringIO()
-with redirect_stdout(f):
-    sitk.PrintParameterMap(rigid)
-s = f.getvalue()
-print("this doesn't work", s)
-#start = Capturing(sitk.PrintParameterMap(rigid))
-#sitk.PrintParameterMap(rigid)
+# create a dictionary from the elastix stuff
+# parameter_dict = {}
+# for key, value in rigid.items():
+#   parameter_dict[key] = value
+#   #print(rigid["TransformParameters"])
+# print(parameter_dict)
 
-
-quit()
 # affine = sitk.GetDefaultParameterMap("affine")
 # affine["NumberOfResolutions"] = ['5']
 # affine["DefaultPixelValue"] = ['255']

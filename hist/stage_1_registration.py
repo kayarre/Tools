@@ -16,7 +16,7 @@ import utils #import get_sitk_image, display_images
 
 
 # n_max is the maxmimum picture size for registration
-def stage_1_transform(reg_dict, n_max, count=0):
+def stage_1_transform(reg_dict, n_max, init_angle, count=0):
     #print(fixed[1]["crop_paths"])
     ff_path = reg_dict["f_row"]["crop_paths"]
     tf_path = reg_dict["t_row"]["crop_paths"]
@@ -54,8 +54,13 @@ def stage_1_transform(reg_dict, n_max, count=0):
     #trans = initial_transform.GetParameters()
     #center = initial_transform.GetFixedParameters()
 
-    # get the best one over 30 rotationss
-    n_angles = np.linspace(0.0, 2.0*np.pi * 31.0/32.0, 32)
+    # pick a narrower region to attempt registration
+    # take the best guess and then get  a range of
+    # angles that span the plus or minus 5/7 of one "tick"
+    # in rotation from the guess
+    best_init = init_angle["best_angle"]
+    angle_range = (5.0 / 7.0) * 2.0 * np.pi / init_angle["n_angles"]
+    n_angles = np.linspace(best_init-angle_range, best_init+angle_range, 5)
     #print(n_angles)
     best_reg = {}
     # this is where we could put a loop to iterate over the rotation angle
@@ -87,14 +92,15 @@ def stage_1_transform(reg_dict, n_max, count=0):
     #                                                         1.06909091, 0.89090909, 0.71272727, 0.53454545, 0.35636364,
     #                                                         0.17818182, 0.        ])
     #reg_method.SetSmoothingSigmasPerLevel(smoothingSigmas = [2., 1., 0., 2., 1., 0., 2., 1., 0., 2., 1., 0.])
-    reg_method.SetSmoothingSigmasPerLevel(smoothingSigmas = [0.5, 0.0, 0.5, 0.0, 0.5, 0.0, 0.5, 0.])
+    #reg_method.SetSmoothingSigmasPerLevel(smoothingSigmas = [0.0, 0.1, 0.5, 0.2, 1.0, 0.4, 2.0, 0.8])
+    reg_method.SetSmoothingSigmasPerLevel(smoothingSigmas = [1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0])
     reg_method.SmoothingSigmasAreSpecifiedInPhysicalUnitsOn()
 
     # Connect all of the observers so that we can perform plotting during registration.
-    #reg_method.AddCommand(sitk.sitkStartEvent, utils.start_plot)
-    #reg_method.AddCommand(sitk.sitkEndEvent, lambda: eutils.nd_plot(angle))
-    #reg_method.AddCommand(sitk.sitkMultiResolutionIterationEvent, utils.update_multires_iterations) 
-    #reg_method.AddCommand(sitk.sitkIterationEvent, lambda: utils.plot_values(reg_method))
+    reg_method.AddCommand(sitk.sitkStartEvent, utils.start_plot)
+    reg_method.AddCommand(sitk.sitkEndEvent, lambda: utils.end_plot(angle))
+    reg_method.AddCommand(sitk.sitkMultiResolutionIterationEvent, utils.update_multires_iterations) 
+    reg_method.AddCommand(sitk.sitkIterationEvent, lambda: utils.plot_values(reg_method))
 
     min_metric = 9999999.0
     for angle in n_angles:

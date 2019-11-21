@@ -17,6 +17,7 @@ logging.basicConfig(level=logging.WARNING)
 #from read_vips import parse_vips
 from utils import get_additional_info
 from stage_1_registration import stage_1_transform
+from stage_1_parallel import stage_1_parallel_metric
 from stage_1b_registration import stage_1b_transform
 from stage_2_registration import stage_2_transform
 from stage_3_registration import stage_3_transform
@@ -32,8 +33,9 @@ def main():
     #df = pd.read_pickle(os.path.join(crop_dir, "case_1.pkl"))
 
     case_file = "case_1.pkl"
-    top_dir = "/media/store/krs/caseFiles"
+    #top_dir = "/media/store/krs/caseFiles"
     #top_dir = "/Volumes/SD/caseFiles"
+    top_dir = "/media/sansomk/510808DF6345C808/caseFiles"
 
     df = pd.read_pickle(os.path.join(top_dir, case_file))
 
@@ -73,11 +75,16 @@ def main():
 
         #print(template[0], fixed[0])
 
-        stage_1_params = sitk.GetDefaultParameterMap("translation")
-        stage_1_params["NumberOfResolutions"] = ['1']
+        #stage_1_params = sitk.GetDefaultParameterMap("translation")
+        #stage_1_params["NumberOfResolutions"] = ['1']
         #print(sitk.PrintParameterMap(stage_1_params))
         #quit()
-        best_reg_s1 = stage_1_transform(reg_dict=reg_n[-1], n_max=512)
+        initial_params = stage_1_parallel_metric(reg_dict=reg_n[-1], n_max=512)
+        #print(initial_params)
+        
+        best_reg_s1 = stage_1_transform(reg_dict=reg_n[-1], n_max=512,
+                                        init_angle = initial_params)
+        quit()
         best_reg_s1b = stage_1b_transform(reg_dict=reg_n[-1], n_max=1024, initial_transform=best_reg_s1)
 
         #best_reg_s2 = stage_2_transform(reg_dict=reg_n[-1], n_max=512, initial_transform=best_reg_s1b)
