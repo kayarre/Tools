@@ -45,7 +45,9 @@ print( elastix.GetNumberOfMovingImages())
 rigid = sitk.GetDefaultParameterMap("rigid")
 rigid["DefaultPixelValue"] = ['255']
 rigid["WriteResultImage"] = ['false']
-rigid["TransformParameters"]  = ["0.180993", "-1.74626", "8.08803"]
+sitk.PrintParameterMap(rigid)
+quit()
+#rigid["TransformParameters"]  = ["0.180993", "-1.74626", "8.08803"]
 #rigid["CenterOfRotationPoint"]  = ["257.55", "257.55"]
 #print(help(rigid))
 

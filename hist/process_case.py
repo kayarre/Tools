@@ -72,7 +72,8 @@ def main():
 
         # leave the index for now
         reg_n.append(dict(f_row = f_r[1], t_row = t_r[1], f_page=f_pg_info, t_page=t_pg_info))
-
+        #print(reg_n)
+        #quit()
         #print(template[0], fixed[0])
 
         #stage_1_params = sitk.GetDefaultParameterMap("translation")
@@ -80,13 +81,17 @@ def main():
         #print(sitk.PrintParameterMap(stage_1_params))
         #quit()
         initial_params = stage_1_parallel_metric(reg_dict=reg_n[-1], n_max=512)
-        #print(initial_params)
+        print(initial_params)
+        print(initial_params["best_metric"])
         
-        best_reg_s1 = stage_1_transform(reg_dict=reg_n[-1], n_max=512,
+        best_reg_s1 = stage_1_transform(reg_dict=reg_n[-1], n_max=1024,
                                         init_angle = initial_params)
-        quit()
-        best_reg_s1b = stage_1b_transform(reg_dict=reg_n[-1], n_max=1024, initial_transform=best_reg_s1)
+        print(
+              best_reg_s1["transform"].GetParameters(),
+              best_reg_s1["transform"].GetFixedParameters()  )
 
+        best_reg_s1b = stage_1b_transform(reg_dict=reg_n[-1], n_max=2048, initial_transform=best_reg_s1)
+        quit()
         #best_reg_s2 = stage_2_transform(reg_dict=reg_n[-1], n_max=512, initial_transform=best_reg_s1b)
         #best_reg_s3 = stage_3_transform(reg_dict=reg_n[-1], n_max=2048, initial_transform=best_reg_s2)
         

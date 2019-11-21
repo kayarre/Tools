@@ -92,15 +92,15 @@ def stage_1_transform(reg_dict, n_max, init_angle, count=0):
     #                                                         1.06909091, 0.89090909, 0.71272727, 0.53454545, 0.35636364,
     #                                                         0.17818182, 0.        ])
     #reg_method.SetSmoothingSigmasPerLevel(smoothingSigmas = [2., 1., 0., 2., 1., 0., 2., 1., 0., 2., 1., 0.])
-    #reg_method.SetSmoothingSigmasPerLevel(smoothingSigmas = [0.0, 0.1, 0.5, 0.2, 1.0, 0.4, 2.0, 0.8])
-    reg_method.SetSmoothingSigmasPerLevel(smoothingSigmas = [1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0])
+    reg_method.SetSmoothingSigmasPerLevel(smoothingSigmas = [0.0, 0.5, 1.0, 2.0, 3.0, 4.0, 6.0, 8.0])
+    #reg_method.SetSmoothingSigmasPerLevel(smoothingSigmas = [1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0])
     reg_method.SmoothingSigmasAreSpecifiedInPhysicalUnitsOn()
 
     # Connect all of the observers so that we can perform plotting during registration.
-    reg_method.AddCommand(sitk.sitkStartEvent, utils.start_plot)
-    reg_method.AddCommand(sitk.sitkEndEvent, lambda: utils.end_plot(angle))
-    reg_method.AddCommand(sitk.sitkMultiResolutionIterationEvent, utils.update_multires_iterations) 
-    reg_method.AddCommand(sitk.sitkIterationEvent, lambda: utils.plot_values(reg_method))
+    # reg_method.AddCommand(sitk.sitkStartEvent, utils.start_plot)
+    # reg_method.AddCommand(sitk.sitkEndEvent, lambda: utils.end_plot(angle))
+    # reg_method.AddCommand(sitk.sitkMultiResolutionIterationEvent, utils.update_multires_iterations) 
+    # reg_method.AddCommand(sitk.sitkIterationEvent, lambda: utils.plot_values(reg_method))
 
     min_metric = 9999999.0
     for angle in n_angles:
@@ -138,9 +138,9 @@ def stage_1_transform(reg_dict, n_max, init_angle, count=0):
     print('Final metric value: {0}'.format(best_reg["measure"]))
     print('Optimizer\'s stopping condition, {0}'.format(best_reg["stop_cond"]))
 
-    # moving_resampled = sitk.Resample(t_sitk, f_sitk,
-    #                                  best_reg["transform"], sitk.sitkLinear,
-    #                                  0.0, t_sitk.GetPixelID())
+    moving_resampled = sitk.Resample(t_sitk, f_sitk,
+                                     best_reg["transform"], sitk.sitkLinear,
+                                     0.0, t_sitk.GetPixelID())
 
     # utils.display_images_with_alpha(alpha = (0.0, 1.0, 0.05),
     #                           fixed = f_sitk, moving = t_sitk)
@@ -153,16 +153,16 @@ def stage_1_transform(reg_dict, n_max, init_angle, count=0):
     #print(stuff)
     #stuff = {}
     #return stuff
-    while (best_reg["measure"] > -0.45):
+    while (best_reg["measure"] > -0.40):
         # try one more time
         if(count <= 0):
-            best_reg = stage_1_transform(reg_dict, n_max, 1)
+            best_reg = stage_1_transform(reg_dict, n_max, init_angle, 1)
         else:
             #basically this isn't goog enough so try at higher resolution
             new_max = n_max*2.0
             if (new_max <= reg_dict["f_page"][0]['size_x'] ):
                 print("Increasing the image resolution to {0}".format(new_max))
-                best_reg = stage_1_transform(reg_dict, new_max, 0)
+                best_reg = stage_1_transform(reg_dict, new_max, init_angle, 0)
             else:
                 print("I have run out of resolution")
                 break
