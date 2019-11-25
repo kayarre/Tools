@@ -41,9 +41,9 @@ def main():
 
     #print(df.head())
 
-    relabel_paths = True
-    in_dir = "vwi_proj"
-    out_dir = 'vwi_proc'
+    #relabel_paths = True
+    #in_dir = "vwi_proj"
+    #out_dir = 'vwi_proc'
     print(df.head())
     print(df.columns)
     #print(df["Image_ID"].values.dtype)
