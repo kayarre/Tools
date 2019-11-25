@@ -51,6 +51,7 @@ def stage_1_transform(reg_dict, n_max, init_angle, count=0):
                                                       t_sitk, 
                                                       sitk.Euler2DTransform(), 
                                                       sitk.CenteredTransformInitializerFilter.MOMENTS)
+    #print(initial_transform)
     #trans = initial_transform.GetParameters()
     #center = initial_transform.GetFixedParameters()
 
@@ -65,6 +66,8 @@ def stage_1_transform(reg_dict, n_max, init_angle, count=0):
     best_reg = {}
     # this is where we could put a loop to iterate over the rotation angle
     rot = sitk.Euler2DTransform(initial_transform)
+    #print(rot)
+    #quit()
     #rot.SetCenter(center)
 
     reg_method = sitk.ImageRegistrationMethod()
@@ -138,9 +141,9 @@ def stage_1_transform(reg_dict, n_max, init_angle, count=0):
     print('Final metric value: {0}'.format(best_reg["measure"]))
     print('Optimizer\'s stopping condition, {0}'.format(best_reg["stop_cond"]))
 
-    moving_resampled = sitk.Resample(t_sitk, f_sitk,
-                                     best_reg["transform"], sitk.sitkLinear,
-                                     0.0, t_sitk.GetPixelID())
+    # moving_resampled = sitk.Resample(t_sitk, f_sitk,
+    #                                  best_reg["transform"], sitk.sitkLinear,
+    #                                  0.0, t_sitk.GetPixelID())
 
     # utils.display_images_with_alpha(alpha = (0.0, 1.0, 0.05),
     #                           fixed = f_sitk, moving = t_sitk)

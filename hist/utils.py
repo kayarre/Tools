@@ -30,9 +30,10 @@ dtype_to_format = {
     'complex128': 'dpcomplex',
 }
 
-def get_additional_info(pd_row):
-    pd_data = pd_row[1]
+def get_additional_info(pd_data):
+    #print(pd_data)
     ff_path = pd_data["crop_paths"]
+    #print(ff_path)
     ff = tiff.TiffFile(ff_path)
 
     base_res_x = pd_data["mpp-x"]
