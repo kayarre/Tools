@@ -108,6 +108,10 @@ def main():
         #print()
         #print(best_reg_s1b)
         quit()
+        #best_reg_s2 = stage_2_transform(reg_dict=reg_n[-1], n_max=512, initial_transform=best_reg_s1b)
+        #best_reg_s3 = stage_3_transform(reg_dict=reg_n[-1], n_max=2048, initial_transform=best_reg_s2)
+        
+        print(best_reg_s1["measure"], best_reg_s1b["measure"])
 
   # for row in df.iterrows():
   #   # pg_info = get_additional_info(row)
