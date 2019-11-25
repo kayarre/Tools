@@ -24,8 +24,22 @@ def evaluate_metric(current_rotation, tx, f_image, m_image):
     current_transform = sitk.Euler2DTransform(tx)
     current_transform.SetAngle(current_rotation)
     registration_method.SetInitialTransform(current_transform)
-    res = registration_method.MetricEvaluate(f_image, m_image)
-    return res
+
+    exception = True
+    count = 0
+    while (exception == True) and (count < 2):
+      try:
+        res = registration_method.MetricEvaluate(f_image, m_image)
+      except RuntimeError as e:
+        count += 1
+        print("Got an exception\n" + str(e))
+        continue
+      exception = False
+
+    if (exception == True):
+      return 9999999999.0
+    else:
+      return res
 
 # Threads of threads ?????
 # don't know if this makes sense
