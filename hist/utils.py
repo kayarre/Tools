@@ -30,6 +30,39 @@ dtype_to_format = {
     'complex128': 'dpcomplex',
 }
 
+def resample_rgb(in_transform, f_sitk, t_sitk, mean=0):
+  select = sitk.VectorIndexSelectionCastImageFilter()
+  channel_0 = select.Execute(t_sitk, 0, t_sitk.GetPixelID())
+  channel_1 = select.Execute(t_sitk, 1, t_sitk.GetPixelID())
+  channel_2 = select.Execute(t_sitk, 2, t_sitk.GetPixelID())
+
+  select2 = sitk.VectorIndexSelectionCastImageFilter()
+  f_0 = select2.Execute(f_sitk, 0, f_sitk.GetPixelID())
+  f_1 = select2.Execute(f_sitk, 1, f_sitk.GetPixelID())
+  f_2 = select2.Execute(f_sitk, 2, f_sitk.GetPixelID())
+
+  t_resampled = sitk.Resample(channel_0, f_sitk, in_transform, sitk.sitkLinear,
+                               mean, f_0.GetPixelID())
+  t_resampled1 = sitk.Resample(channel_1, f_sitk, in_transform, sitk.sitkLinear,
+                               mean, f_1.GetPixelID())
+  t_resampled2 = sitk.Resample(channel_2, f_sitk, in_transform, sitk.sitkLinear,
+                               mean, f_2.GetPixelID())  
+
+  compose_new = sitk.ComposeImageFilter()
+  new_image = compose_new.Execute(t_resampled, t_resampled1, t_resampled2)
+
+  return new_image
+
+
+def get_mean_edges(itk_image):
+  # get the edge values to determine the mean pixel intensity
+  l_side = sitk.GetArrayViewFromImage(itk_image)[0,:].flatten()
+  r_side = sitk.GetArrayViewFromImage(itk_image)[-1,:].flatten()
+  top_side =  sitk.GetArrayViewFromImage(itk_image)[0][1:-2].flatten()
+  bot_side = sitk.GetArrayViewFromImage(itk_image)[-1][1:-2].flatten()
+  mean = int(np.concatenate((l_side, r_side, top_side, bot_side)).mean())
+  return mean
+
 def get_additional_info(pd_data):
     #print(pd_data)
     ff_path = pd_data["crop_paths"]
@@ -62,23 +95,38 @@ def get_additional_info(pd_data):
 
 # Callback invoked by the interact IPython method for scrolling through the image stacks of
 # the two images (moving and fixed).
-def display_images(fixed_npa, moving_npa):
+def display_images(fixed_npa, moving_npa, checkerboard="None", show=True):
     # Create a figure with two subplots and the specified size.
-    plt.subplots(1,2,figsize=(10,8))
+    w = 3
+    #TODO fix this with a different check
+    if (checkerboard == "None"):
+      w = 2
+    fig, ax = plt.subplots(1, w, figsize=(10,8))
+    #plt.subplots(1,w,figsize=(10,8))
     
     # Draw the fixed image in the first subplot.
-    plt.subplot(1,2,1)
-    plt.imshow(fixed_npa[:,:],cmap=plt.cm.Greys_r)
-    plt.title('fixed image')
-    plt.axis('off')
+    #plt.subplot(1,3,1)
+    ax[0].imshow(fixed_npa[:,:],cmap=plt.cm.Greys_r)
+    ax[0].set_title('fixed image')
+    ax[0].set_axis_off()
     
     # Draw the moving image in the second subplot.
-    plt.subplot(1,2,2)
-    plt.imshow(moving_npa[:,:],cmap=plt.cm.Greys_r)
-    plt.title('moving image')
-    plt.axis('off')
+    #plt.subplot(1,3,2)
+    ax[1].imshow(moving_npa[:,:],cmap=plt.cm.Greys_r)
+    ax[1].set_title('moving image')
+    ax[1].set_axis_off()
+
+    #TODO fix this with a different check
+    if (checkerboard != "None"):
+      #plt.subplot(1,3,3)
+      ax[2].imshow(checkerboard[:,:],cmap=plt.cm.Greys_r)
+      ax[2].set_title('checkerboard')
+      ax[2].set_axis_off()
     #plt.ion()
-    plt.show()
+    if (show == True):
+        plt.show()
+    else:
+        return fig
     #plt.pause(0.0001)
 
 # Callback invoked by the IPython interact method for scrolling and modifying the alpha blending
@@ -165,7 +213,7 @@ def resample(image, transform, default_value=0.0, interpolator = sitk.sitkCosine
     else:
         reference_image = ref_image
     return sitk.Resample(image, reference_image, transform,
-                         interpolator, default_value)
+                         interpolator, default_value, image.GetPixelID())
 
 def resampler(ref_image, transform, default_value=0.0, interpolator = sitk.sitkCosineWindowedSinc):
     # Output image Origin, Spacing, Size, Direction are taken from the reference

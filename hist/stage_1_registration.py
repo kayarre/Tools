@@ -30,16 +30,19 @@ def stage_1_transform(reg_dict, n_max, init_angle, count=0):
         break
     page_idx = page["index"]
 
-    print(page_idx, page)
+    #print(page_idx, page)
     spacing = ( page["mmp_x"], page["mmp_y"] )
-    print(spacing)
+    #print(spacing)
     # transform numpy array to simpleITK image
     # have set the parameters manually
     im_f = tiff.imread(ff_path, key=page_idx)
+    n_bins = int(np.cbrt(np.prod(im_f.shape)))
+    #print(n_bins)
     #f_cog = get_center_of_gravity(im_f, spacing)
     f_sitk = utils.get_sitk_image(im_f, spacing)
 
     im_t = tiff.imread(tf_path, key=page_idx)
+
     #t_cog = get_center_of_gravity(im_t, spacing)
     t_sitk = utils.get_sitk_image(im_t, spacing)
 
@@ -73,7 +76,8 @@ def stage_1_transform(reg_dict, n_max, init_angle, count=0):
     reg_method = sitk.ImageRegistrationMethod()
 
     # Similarity metric settings.
-    reg_method.SetMetricAsMattesMutualInformation(numberOfHistogramBins=50)
+    reg_method.SetMetricAsMattesMutualInformation(numberOfHistogramBins=n_bins)
+    #reg_method.SetMetricAsANTSNeighborhoodCorrelation(radius=4)
     reg_method.SetMetricSamplingStrategy(reg_method.RANDOM) #REGULAR
     reg_method.SetMetricSamplingPercentage(0.2)
     reg_method.SetInterpolator(sitk.sitkLinear)
@@ -145,12 +149,14 @@ def stage_1_transform(reg_dict, n_max, init_angle, count=0):
     #                                  best_reg["transform"], sitk.sitkLinear,
     #                                  0.0, t_sitk.GetPixelID())
 
-    # utils.display_images_with_alpha(alpha = (0.0, 1.0, 0.05),
-    #                           fixed = f_sitk, moving = t_sitk)
+    # checkerboard = sitk.CheckerBoardImageFilter()
+    # check_im = checkerboard.Execute(f_sitk, moving_resampled)
 
-    # utils.display_images(fixed_npa = sitk.GetArrayViewFromImage(f_sitk),
-    #                moving_npa = sitk.GetArrayViewFromImage(moving_resampled))
-
+    # utils.display_images(
+    #     fixed_npa=sitk.GetArrayViewFromImage(f_sitk),
+    #     moving_npa=sitk.GetArrayViewFromImage(moving_resampled),
+    #     checkerboard=sitk.GetArrayViewFromImage(check_im)
+    # )
 
     
     #print(stuff)
@@ -193,9 +199,7 @@ class register_series:
         self.trans_param_map["Origin"] = ["0.0", "0.0"]
         self.trans_param_map["Direction"] = ["1.0", "0.0", "0.0", "1.0"]
         
-
-        print(sitk.PrintParameterMap(self.trans_param_map))
-        #quit()
+        #print(sitk.PrintParameterMap(self.trans_param_map))
 
         self.trans_image_filter.SetTransformParameterMap(self.trans_param_map)
         self.moving = None

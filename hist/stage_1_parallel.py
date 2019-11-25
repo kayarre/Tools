@@ -15,7 +15,9 @@ import utils #import get_sitk_image, display_images
 # This function evaluates the metric value in a thread safe manner
 def evaluate_metric(current_rotation, tx, f_image, m_image):
     registration_method = sitk.ImageRegistrationMethod()
-    registration_method.SetMetricAsMattesMutualInformation(numberOfHistogramBins=50)
+    registration_method.SetMetricAsANTSNeighborhoodCorrelation(radius=4)
+    #n_bins = int(np.cbrt(np.prod(sitk.GetArrayViewFromImage(f_image).shape)))
+    #registration_method.SetMetricAsMattesMutualInformation(numberOfHistogramBins=50)
     registration_method.SetMetricSamplingStrategy(registration_method.RANDOM)
     registration_method.SetMetricSamplingPercentage(0.2)
     registration_method.SetInterpolator(sitk.sitkLinear)
