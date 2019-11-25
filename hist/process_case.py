@@ -37,8 +37,8 @@ def main():
 
   case_file = "case_1.pkl"
   # top_dir = "/media/store/krs/caseFiles"
-  # top_dir = "/Volumes/SD/caseFiles"
-  top_dir = "/media/sansomk/510808DF6345C808/caseFiles"
+  top_dir = "/Volumes/SD/caseFiles"
+  #top_dir = "/media/sansomk/510808DF6345C808/caseFiles"
 
   df = pd.read_pickle(os.path.join(top_dir, case_file))
 
@@ -104,9 +104,9 @@ def main():
         # best_reg_s2 = stage_2_transform(reg_dict=reg_n[-1], n_max=512, initial_transform=best_reg_s1b)
         # best_reg_s3 = stage_3_transform(reg_dict=reg_n[-1], n_max=2048, initial_transform=best_reg_s2)
 
-        print(best_reg_s1)
-        print()
-        print(best_reg_s1b)
+        #print(best_reg_s1)
+        #print()
+        #print(best_reg_s1b)
         quit()
 
   # for row in df.iterrows():

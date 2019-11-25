@@ -17,18 +17,26 @@ logging.basicConfig(level=logging.WARNING)
 
 import utils  # import get_sitk_image, display_images
 
-elastic_dir = "/media/sansomk/510808DF6345C808/caseFiles/elastix"
+#elastic_dir = "/media/sansomk/510808DF6345C808/caseFiles/elastix"
+elastic_dir = "/Volumes/SD/caseFiles/elastix"
 
 
 # This function evaluates the metric value in a thread safe manner
 def evaluate_metric(current_transform, f_image, m_image):
   registration_method = sitk.ImageRegistrationMethod()
-  registration_method.SetMetricAsANTSNeighborhoodCorrelation(radius=4)
+  #registration_method.SetMetricAsANTSNeighborhoodCorrelation(radius=4)
+  registration_method.SetMetricAsMattesMutualInformation(numberOfHistogramBins=50)
   registration_method.SetMetricSamplingStrategy(registration_method.RANDOM)
   registration_method.SetMetricSamplingPercentage(0.2)
   registration_method.SetInterpolator(sitk.sitkLinear)
   registration_method.SetInitialTransform(current_transform)
-  res = registration_method.MetricEvaluate(f_image, m_image)
+  res = []
+  for a, b in zip(f_image, m_image):
+    res.append(registration_method.MetricEvaluate(sitk.Cast(a, sitk.sitkFloat32),
+                                                  sitk.Cast(b, sitk.sitkFloat32)
+                                                  )
+              )
+
   return res
 
 
@@ -75,7 +83,7 @@ def stage_1b_transform(reg_dict, n_max, initial_transform, count=0):
   rigid = sitk.GetDefaultParameterMap("rigid")
   rigid["DefaultPixelValue"] = ["255"]
   rigid["WriteResultImage"] = ["false"]
-  rigid[ "MaximumNumberOfIterations" ] = [ "1" ]
+  #rigid[ "MaximumNumberOfIterations" ] = [ "1" ]
   # sitk.PrintParameterMap(rigid)
 
   
@@ -95,7 +103,7 @@ def stage_1b_transform(reg_dict, n_max, initial_transform, count=0):
   affine["NumberOfResolutions"] = ["5"]
   affine["DefaultPixelValue"] = ["255"]
   affine["WriteResultImage"] = ["false"]
-  affine[ "MaximumNumberOfIterations" ] = [ "1" ]
+  #affine[ "MaximumNumberOfIterations" ] = [ "1" ]
 
   parameterMapVector = sitk.VectorOfParameterMap()
   parameterMapVector.append(rigid)
@@ -142,17 +150,17 @@ def stage_1b_transform(reg_dict, n_max, initial_transform, count=0):
 
   # print(tran_map.GetTransformParameter("CenterOfRotationPoint"))
   # print(tran_map["TransformParameters"])
-  test_image = sitk.Transformix(sitk.VectorIndexSelectionCast(t_sitk, 0), tran_map)
-  test_image1 = sitk.Transformix(sitk.VectorIndexSelectionCast(t_sitk, 1), tran_map)
-  test_image2 = sitk.Transformix(sitk.VectorIndexSelectionCast(t_sitk, 2), tran_map)
+  # test_image = sitk.Transformix(sitk.VectorIndexSelectionCast(t_sitk, 0), tran_map)
+  # test_image1 = sitk.Transformix(sitk.VectorIndexSelectionCast(t_sitk, 1), tran_map)
+  # test_image2 = sitk.Transformix(sitk.VectorIndexSelectionCast(t_sitk, 2), tran_map)
 
-  new_array = np.empty_like(im_f[:, :, :3])
-  new_array[:, :, 0] = sitk.GetArrayViewFromImage(test_image)
-  new_array[:, :, 1] = sitk.GetArrayViewFromImage(test_image1)
-  new_array[:, :, 2] = sitk.GetArrayViewFromImage(test_image2)
-  utils.display_images(
-      fixed_npa=sitk.GetArrayViewFromImage(f_sitk), moving_npa=new_array
-  )
+  # new_array = np.empty_like(im_f[:, :, :3])
+  # new_array[:, :, 0] = sitk.GetArrayViewFromImage(test_image)
+  # new_array[:, :, 1] = sitk.GetArrayViewFromImage(test_image1)
+  # new_array[:, :, 2] = sitk.GetArrayViewFromImage(test_image2)
+  # utils.display_images(
+  #     fixed_npa=sitk.GetArrayViewFromImage(f_sitk), moving_npa=new_array
+  # )
 
   composite = sitk.Transform(transform_init)
   #print(composite)
@@ -197,7 +205,15 @@ def stage_1b_transform(reg_dict, n_max, initial_transform, count=0):
     # rigid["CenterOfRotationPoint"] = [str(a) for a in fixed_in_params]
   print(composite)
 
-  sitk.GetArrayViewFromImage(t_sitk)[0,]
+  # get the edge values to determine the mean pixel intensity
+  l_side = sitk.GetArrayViewFromImage(t_sitk)[0,:].flatten()
+  r_side = sitk.GetArrayViewFromImage(t_sitk)[-1,:].flatten()
+  top_side =  sitk.GetArrayViewFromImage(t_sitk)[0][1:-2].flatten()
+  bot_side = sitk.GetArrayViewFromImage(t_sitk)[-1][1:-2].flatten()
+  mean = int(np.concatenate((l_side, r_side, top_side, bot_side)).mean())
+
+  #print(mean)
+
 
   select = sitk.VectorIndexSelectionCastImageFilter()
   channel_0 = select.Execute(t_sitk, 0, t_sitk.GetPixelID())
@@ -205,16 +221,16 @@ def stage_1b_transform(reg_dict, n_max, initial_transform, count=0):
   channel_2 = select.Execute(t_sitk, 2, t_sitk.GetPixelID())
 
   select2 = sitk.VectorIndexSelectionCastImageFilter()
-  f_0 = select.Execute(f_sitk, 0, f_sitk.GetPixelID())
-  f_1 = select.Execute(f_sitk, 1, f_sitk.GetPixelID())
-  f_2 = select.Execute(f_sitk, 2, f_sitk.GetPixelID())
+  f_0 = select2.Execute(f_sitk, 0, f_sitk.GetPixelID())
+  f_1 = select2.Execute(f_sitk, 1, f_sitk.GetPixelID())
+  f_2 = select2.Execute(f_sitk, 2, f_sitk.GetPixelID())
 
   t_resampled = sitk.Resample(channel_0, f_sitk, composite, sitk.sitkLinear,
-                               255, f_0.GetPixelID())
+                               mean, f_0.GetPixelID())
   t_resampled1 = sitk.Resample(channel_1, f_sitk, composite, sitk.sitkLinear,
-                               255, f_1.GetPixelID())
+                               mean, f_1.GetPixelID())
   t_resampled2 = sitk.Resample(channel_2, f_sitk, composite, sitk.sitkLinear,
-                               255, f_2.GetPixelID())  
+                               mean, f_2.GetPixelID())  
 
   compose_new = sitk.ComposeImageFilter()
   new_image = compose_new.Execute(t_resampled, t_resampled1, t_resampled2)
@@ -228,5 +244,15 @@ def stage_1b_transform(reg_dict, n_max, initial_transform, count=0):
       moving_npa=sitk.GetArrayViewFromImage(new_image)
   )
 
-  return composite
+  metric = evaluate_metric(composite,
+                            (channel_0, channel_1, channel_2),
+                            (f_0, f_1, f_2) 
+                          )
+  print(metric)
+  best_reg = dict(
+                  transform = composite,
+                  measure = metric,
+                  )
+
+  return best_reg
 

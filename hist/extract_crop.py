@@ -11,8 +11,8 @@ logging.basicConfig(level=logging.WARNING)
 
 
 #top_dir = "/media/store/krs/caseFiles"
-#top_dir = "/Volumes/SD/caseFiles"
-top_dir = "/media/sansomk/510808DF6345C808/caseFiles"
+top_dir = "/Volumes/SD/caseFiles"
+#top_dir = "/media/sansomk/510808DF6345C808/caseFiles"
 
 # this tool will create all cropped images
 
