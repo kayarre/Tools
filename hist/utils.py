@@ -30,6 +30,49 @@ dtype_to_format = {
     'complex128': 'dpcomplex',
 }
 
+
+def _calculate_composite(G, moving_slice_index):
+  """
+  Composes individual partial transformations into composite
+  transformation registering provided moving slice to the reference
+  image.
+  :param moving_slice_index: moving slice index
+  :type moving_slice_index: int
+  """
+
+  # The transformation chain is a sequence of pairs of (fixed, moving)
+  # slices. This sequence links the reference slices with given moving
+  # slice.
+  transformation_chain = _get_transformation_chain(G, moving_slice_index)
+  # Initialize the partial transforms array and then collect all partial
+  # transformations constituting given composite transformation.
+  partial_transformations = []
+  for (m_slice, r_slice) in transformation_chain:
+    partial_transformations.append(
+    if (G.has_edge(m_slice, r_slice)):
+      data = G.get_edge_data(m_slice, r_slice)
+      partial_transformations.append(data["transform"])
+
+  return partial_transformations
+
+def _get_transformation_chain(G, moving_index):
+  # r is the reference image, normally pick on in the middle, but don't trust it
+  r = 0
+ # Calculate shortest paths between individual slices
+  slice_paths = nx.all_pairs_dijkstra_path(G)
+  # Get the shortest path linking given moving slice with the reference
+  # slice.
+  path = list(reversed(slice_paths[r][moving_index]))
+  chain = []
+
+  # In case we hit a reference slice :)
+  if i == r:
+    chain.append((r, r))
+  # For all the other cases collect partial transforms.
+  for step in range(len(path) - 1):
+    chain.append((path[step], path[step + 1]))
+  return chain
+
 def resample_rgb(in_transform, f_sitk, t_sitk, mean=0):
   select = sitk.VectorIndexSelectionCastImageFilter()
   channel_0 = select.Execute(t_sitk, 0, t_sitk.GetPixelID())
@@ -89,7 +132,7 @@ def get_additional_info(pd_data):
                           mmp_y = yscale * base_res_y, 
                           )
                     )
-
+    ff.close()
     return pages
 
 

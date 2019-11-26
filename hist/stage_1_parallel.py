@@ -37,7 +37,7 @@ def evaluate_metric(current_rotation, tx, f_image, m_image):
       exception = False
 
     if (exception == True):
-      return 9999999999.0
+      return 0.0
     else:
       return res
 
@@ -50,9 +50,11 @@ def evaluate_metric_extra(current_page, f_image, m_image, angles):
     # have set the parameters manually
     im_f = tiff.imread(f_image, key=page_idx)
     f_sitk = utils.get_sitk_image(im_f, spacing)
+    #im_f.close()
 
     im_t = tiff.imread(m_image, key=page_idx)
     t_sitk = utils.get_sitk_image(im_t, spacing)
+    #im_t.close()
 
     initial_transform = sitk.CenteredTransformInitializer(f_sitk, 
                                                     t_sitk, 
@@ -65,6 +67,7 @@ def evaluate_metric_extra(current_page, f_image, m_image, angles):
                                     f_image = sitk.Cast(f_sitk, sitk.sitkFloat32),
                                     m_image = sitk.Cast(t_sitk, sitk.sitkFloat32)),
                             angles)
+    p.close()
     #print(all_metric_values)
     best_orientation = angles[np.argmin(all_metric_values)]
     #print('best orientation is: ' + str(best_orientation))
@@ -101,7 +104,7 @@ def stage_1_parallel_metric(reg_dict, n_max, count=0):
                                     m_image = tf_path,
                                     angles = n_angles),
                             page_list)
-
+    p_page.close()
     result = {}
     metric = 99999999.0
     keep = None

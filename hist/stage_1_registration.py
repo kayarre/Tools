@@ -164,12 +164,12 @@ def stage_1_transform(reg_dict, n_max, init_angle, count=0):
     #return stuff
     while (best_reg["measure"] > -0.40):
         # try one more time
-        if(count <= 0):
-            best_reg = stage_1_transform(reg_dict, n_max, init_angle, 1)
+        if(count <= 2):
+            best_reg = stage_1_transform(reg_dict, n_max, init_angle, count+1)
         else:
             #basically this isn't goog enough so try at higher resolution
             new_max = n_max*2.0
-            if (new_max <= reg_dict["f_page"][0]['size_x'] ):
+            if (new_max <= (reg_dict["f_page"][0]['size_x'] // 4 ) ):
                 print("Increasing the image resolution to {0}".format(new_max))
                 best_reg = stage_1_transform(reg_dict, new_max, init_angle, 0)
             else:

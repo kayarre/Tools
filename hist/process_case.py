@@ -8,7 +8,7 @@ import SimpleITK as sitk
 import networkx as nx
 
 # import itk
-# import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 
 # from ipywidgets import interact, fixed
 # from IPython.display import clear_output
@@ -62,7 +62,7 @@ def main():
   tmp_index = 0
   reg_n = {}
   epsilon = 3
-  lamda = 1.0
+  lambda_ = 1.0
 
   # create a new graph
   G = nx.DiGraph()
@@ -121,13 +121,17 @@ def main():
         fig_name = os.path.join(image_dir, "fig_affine_{0}_{1}.png".format(i,j))
         fig_path = os.path.join(top_dir, fig_name)
         affine_fig.savefig(fig_path)
-
+        plt.close(affine_fig)
 
         affine_name = os.path.join(trans_dir, "affine_{0}_{1}.h5".format(i,j))
         transform_path = os.path.join(top_dir, affine_name)
         sitk.WriteTransform(best_reg_s1b["transform"], transform_path)
 
-        G.add_edge(i, j, measure = best_reg_s1b["measure"],
+        abs_ij = np.abs(i-j)
+        # this is the metric from the possum framework
+        weight = (1.0 + best_reg_s1b["measure"]) * abs_ij * (1.0 + lambda_)**(abs_ij) 
+        G.add_edge(i, j, weight = weight,
+                  measure = best_reg_s1b["measure"],
                   transform = best_reg_s1b["transform"],
                   tiff_page = best_reg_s1b["tiff_page"],
                   transform_file_name = affine_name )
@@ -146,6 +150,22 @@ def main():
         #print(best_reg_s1["measure"], best_reg_s1b["measure"])
   pickle_path = os.path.join(top_dir, case_file.split(".")[0] + ".gpkl" )
   nx.write_gpickle(G, pickle_path)
+  # r is the reference image, normally pick on in the middle, but don't trust it
+  r = 0
+  # Calculate shortest paths between individual slices
+  slice_paths = nx.all_pairs_dijkstra_path(G)
+  # Get the shortest path linking given moving slice with the reference
+  # slice.
+  path = list(reversed(slice_paths[r][i]))
+  chain = []
+
+  # In case we hit a reference slice :)
+  if i == r:
+    chain.append((r, r))
+  # For all the other cases collect partial transforms.
+  for step in range(len(path) - 1):
+    chain.append((path[step], path[step + 1]))
+  #return chain
 
 if __name__ == "__main__":
   main()
