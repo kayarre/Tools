@@ -9,6 +9,7 @@ import utils
 import itk
 import pandas as pd
 import numpy
+import matplotlib.pyplot as plt
 
 
 # HAVE_NUMPY = True
@@ -95,8 +96,9 @@ class PipeLine:
     self.sigmoid = sitk.SigmoidImageFilter()
     self.sigmoid.SetOutputMinimum(0.0)
     self.sigmoid.SetOutputMaximum(1.0)
-    self.sigmoid.SetBeta(0.5)
-    self.sigmoid.SetAlpha(0.1)# Create an itk image from the simpleitk image via numpy array
+    self.sigmoid.SetBeta(64)#(0.2) defines the intensity around which the range is centered
+    # alpha defines the width of the input intensity range
+    self.sigmoid.SetAlpha(32)#(0.1)# Create an itk image from the simpleitk image via numpy array
 
     self.gradmag = sitk.GradientMagnitudeRecursiveGaussianImageFilter()
     self.sigma = 2.0
@@ -120,7 +122,7 @@ class PipeLine:
 
     self.binary_fill = sitk.BinaryFillholeImageFilter()
     self.binary_fill.FullyConnectedOff()
-    self.binary_fill.SetForegroundValue(255.0)
+    self.binary_fill.SetForegroundValue(0.0)
 
     self.dilate = sitk.BinaryDilateImageFilter()
     self.dilate.BoundaryToForegroundOff()
@@ -129,10 +131,17 @@ class PipeLine:
     self.dilate.SetForegroundValue(0)
     self.dilate.SetBackgroundValue(1)
 
+    self.erode = sitk.BinaryErodeImageFilter()
+    self.erode.BoundaryToForegroundOff()
+    self.erode.SetKernelType(sitk.sitkBall)
+    self.erode.SetKernelRadius(1)
+    self.erode.SetForegroundValue(0)
+    self.erode.SetBackgroundValue(1)
+
     self.mask_neg = sitk.MaskNegatedImageFilter()
     #self.mask_neg = sitk.MaskImageFilter()
     #self.mask_neg.SetMaskingValue(255)
-    self.mask_neg.SetOutsideValue(255)
+    self.mask_neg.SetOutsideValue(0)
 
     self.checkerboard = sitk.CheckerBoardImageFilter()
 
@@ -149,6 +158,18 @@ class PipeLine:
     self.signedmaurer.UseImageSpacingOn()
     self.signedmaurer.InsideIsPositiveOff()
 
+    self.cc = sitk.ConnectedComponentImageFilter()
+    self.cc.FullyConnectedOff()
+
+    self.stats = sitk.LabelIntensityStatisticsImageFilter()
+
+    self.binary_opening = sitk.BinaryOpeningByReconstructionImageFilter()
+    self.binary_opening.FullyConnectedOn()
+    self.binary_opening.SetKernelType(sitk.sitkBall)
+    self.binary_opening.SetKernelRadius(16)
+    self.binary_opening.SetBackgroundValue(1.0)
+    self.binary_opening.SetForegroundValue(0.0)
+
 
 def main():
   # Create Masks for the images
@@ -157,15 +178,17 @@ def main():
   #n_max = 256
   n_max = 128
 
-  # top_dir = "/Volumes/SD/caseFiles"
-  top_dir = "/media/store/krs/caseFiles"
+  top_dir = "/Volumes/SD/caseFiles"
+  #top_dir = "/media/store/krs/caseFiles"
   # top_dir = "/media/sansomk/510808DF6345C808/caseFiles"
   pickle_path = os.path.join(top_dir, case_file)
   df = pd.read_pickle(pickle_path)
 
   mask_dir = "masks"
+  images_dir = "images"
+  images_path = os.path.join(top_dir, images_dir)
 
-  mask_path = os.path.join(top_dir, mask_dir)
+  mask_dir_path = os.path.join(top_dir, mask_dir)
 
   mask_path_list = []
   mask_name_list = []
@@ -173,7 +196,9 @@ def main():
   pipe = PipeLine()
 
   for idx, pd_data in df.iterrows():
-    tiff_path = pd_data["crop_paths"]
+    if ( idx != 13):
+      continue
+    tiff_path = pd_data["crop_paths"] # ["color_paths"]
     page_data = utils.get_additional_info(pd_data)
 
     for page in page_data:
@@ -182,6 +207,7 @@ def main():
         break
     page_idx = page["index"]
     spacing = ( page["mmp_x"], page["mmp_y"] )
+    print(spacing)
     in_image = tiff.imread(tiff_path, key=page_idx)
 
     print(in_image.shape)
@@ -215,23 +241,30 @@ def main():
     # new_sitk_image.SetDirection(itk.GetArrayFromMatrix(grayscale.GetDirection()).flatten())
     new_sitk_image = utils.get_sitk_image(in_image, spacing)
     inputImage = sitk.Cast(new_sitk_image, sitk.sitkFloat64)
-    #utils.display_image(sitk.GetArrayFromImage(inputImage))
+    shift_im = sitk.ShiftScale(	inputImage, shift = 128, scale = 1.0 )	
+    rescale_in = pipe.rescaleUIint8.Execute(shift_im)
+    utils.display_image(sitk.GetArrayFromImage(rescale_in))
 
-    time_step = 0.5*(spacing[0] / (2.0**3.0))
+    time_step = 0.8*(spacing[0] / (2.0**3.0))
     print(time_step)
     pipe.smooth.SetTimeStep(time_step)
     smoothingOutput = pipe.smooth.Execute(inputImage)
+    utils.display_image(sitk.GetArrayFromImage(smoothingOutput))
 
-    #utils.display_image(sitk.GetArrayFromImage(smoothingOutput))
+    pipe.gradmag.SetSigma(2.0)
+    grad_mag = pipe.gradmag.Execute(smoothingOutput)
+    utils.display_image(sitk.GetArrayFromImage(grad_mag))
 
-    rescale_gray = pipe.rescale_1.Execute(smoothingOutput)
+    	
+
+    rescale_gray = pipe.rescaleUIint8.Execute(grad_mag)
     utils.display_image(sitk.GetArrayFromImage(rescale_gray))
 
     sigmoidOutput = pipe.sigmoid.Execute(rescale_gray)
     utils.display_image(sitk.GetArrayFromImage(sigmoidOutput))
 
-    #invert = sitk.InvertIntensity(rescale_gray)
-    #utils.display_image(sitk.GetArrayFromImage(invert))
+    invert = sitk.InvertIntensity(sigmoidOutput)
+    utils.display_image(sitk.GetArrayFromImage(invert))
 
     pipe.march.ClearTrialPoints()
     for pt in seedPositions:
@@ -243,24 +276,43 @@ def main():
 
     #dist = pipe.signedmaurer.Execute(sitk.Cast(rescale_fm, sitk.sitkUInt32))
     #utils.display_image(sitk.GetArrayFromImage(dist))
-    output = pipe.lsFilter.Execute(rescale_fm, rescale_gray)
+    output = pipe.lsFilter.Execute(rescale_fm, inputImage)
 
     #output = pipe.lsFilter.Execute(sitk.InvertIntensity(fastMarchingOutput), rescale_gray)
-    utils.display_image(sitk.GetArrayFromImage(output))
+    #utils.display_image(sitk.GetArrayFromImage(output))
    
     binary_out = pipe.binary_fill.Execute(sitk.Cast(output, sitk.sitkUInt8))
     utils.display_image(sitk.GetArrayFromImage(binary_out))
 
-    dilate_im = pipe.dilate.Execute(binary_out)
+    pipe.erode.SetKernelRadius(2)
+    erode_im = pipe.erode.Execute(binary_out)
+
+    remove_stuff = pipe.binary_opening.Execute(erode_im)
+    utils.display_image(sitk.GetArrayFromImage(remove_stuff))
+
+    pipe.dilate.SetKernelRadius(4)
+    dilate_im = pipe.dilate.Execute(remove_stuff)
+
     utils.display_image(sitk.GetArrayFromImage(dilate_im))
+
+    # test = sitk.BinaryNot(binary_out,
+    #                       foregroundValue = 0.0,
+    #                       backgroundValue = 1.0 )
+    # #utils.display_image(sitk.GetArrayFromImage(test))
+
+    # test2 = pipe.cc.Execute(test)
+    # utils.display_image(sitk.GetArrayFromImage(test2))
+
+    # stats = pipe.stats.Execute(test2, test)
 
     rescaleOutput = pipe.rescaleUIint8.Execute(dilate_im)
 
     masked_im = pipe.mask_neg.Execute(inputImage,
                                     sitk.Cast(dilate_im, sitk.sitkFloat64))
+    utils.display_image(sitk.GetArrayFromImage(masked_im))
 
-    mask_name = case_file.split(".")[0] + "_mask {0}.nrrd".format(idx)
-    mask_path = os.path.join(mask_path, mask_name)
+    mask_name = case_file.split(".")[0] + "_mask_{0:04d}.nrrd".format(idx)
+    mask_path = os.path.join(mask_dir_path, mask_name)
 
     mask_name_list.append(mask_path)
     mask_path_list.append(mask_path)
@@ -269,14 +321,23 @@ def main():
     pipe.writer.Execute(masked_im)
     
     check_im = pipe.checkerboard.Execute( sitk.Cast(rescaleOutput, sitk.sitkFloat64),
-                                    rescale_gray,
+                                    inputImage,
                                     (8,8)
                                     )
 
     utils.display_images(sitk.GetArrayFromImage(dilate_im),
                         sitk.GetArrayFromImage(masked_im),
-                        checkerboard=sitk.GetArrayFromImage(check_im))
-    quit()
+                        checkerboard=sitk.GetArrayFromImage(check_im),
+                        show=True)
+
+
+    # mask_fig = utils.display_images(sitk.GetArrayFromImage(dilate_im),
+    #                     sitk.GetArrayFromImage(masked_im),
+    #                     checkerboard=sitk.GetArrayFromImage(check_im),
+    #                     show=False)
+    # fig_path = os.path.join(images_path, "fig_mask_{0}.png".format(idx))
+    # mask_fig.savefig(fig_path)
+    # plt.close(mask_fig)
 
 
   df["mask_path"] = mask_path_list

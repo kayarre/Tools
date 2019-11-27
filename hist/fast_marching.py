@@ -10,14 +10,15 @@ import numpy as np
 #     print("Usage: {0} <inputImage> <outputImage> <seedX> <seedY> <Sigma> <SigmoidAlpha> <SigmoidBeta> <TimeThreshold>".format(sys.argv[0]))
 #     sys.exit(1)
 
-top_dir = "/media/store/krs/caseFiles/vwi_proc/"
+#top_dir = "/media/store/krs/caseFiles/vwi_proc/"
+top_dir = "/Volumes/SD/caseFiles/vwi_proc"
 #top_dir = "/media/sansomk/510808DF6345C808/caseFiles/vwi_proc/"
 
 # this works for rgb, but not
-fixed = os.path.join(top_dir, "case01/color_case_1_im_0000.tiff")
+fixed = os.path.join(top_dir, "case01/color_case_1_im_0001.tiff")
 
-im_f = tiff.imread(fixed, key=8)
-spacing = ( 2.02, 2.02)
+im_f = tiff.imread(fixed, key=6)
+spacing = (16.16, 16.16)
 
 #f_sitk = utils.get_sitk_image(im_f[:,:,:3], spacing = spacing, vector=True)
 
@@ -33,8 +34,8 @@ seedPositions.append((int(shape[0]-1), int(shape[1]-1), seedValue))
 #sigma = 1.0
 #alpha = 255.0 # 3.0/4.0 * 255.0 # width of intensity
 #beta = 255.0/2.0 # center of the window
-timeThreshold = 0.3
-stoppingTime = 1000
+#timeThreshold = 0.3
+#stoppingTime = 1000
 
 # Create an itk image from the simpleitk image via numpy array
 itk_image = itk.GetImageFromArray(im_f, is_vector = True)
@@ -57,12 +58,10 @@ new_sitk_image.SetDirection(itk.GetArrayFromMatrix(grayscale.GetDirection()).fla
 #img_bw =  sitk.Cast(sitk.RescaleIntensity(f_sitk), sitk.sitkUInt8)
 inputImage = sitk.Cast(new_sitk_image, sitk.sitkFloat64)
 
-#utils.display_image(sitk.GetArrayFromImage(inputImage))
+utils.display_image(sitk.GetArrayFromImage(inputImage))
 
 #invert = sitk.InvertIntensity(inputImage)
-
 #utils.display_image(sitk.GetArrayFromImage(invert))
-
 #print(inputImage)
 
 smoothing = sitk.CurvatureAnisotropicDiffusionImageFilter()
@@ -77,6 +76,7 @@ rescale_g = sitk.RescaleIntensityImageFilter()
 rescale_g.SetOutputMinimum(0.0)
 rescale_g.SetOutputMaximum(255.0)
 rescale_gray = rescale_g.Execute(smoothingOutput)
+utils.display_image(sitk.GetArrayFromImage(rescale_gray))
 
 # gradientMagnitude = sitk.GradientMagnitudeRecursiveGaussianImageFilter()
 # gradientMagnitude.SetSigma(sigma)
@@ -120,7 +120,7 @@ for pt in seedPositions:
 
 fastMarchingOutput = fastMarching.Execute(rescale_gray)#sigmoidOutput)
 
-#utils.display_image(sitk.GetArrayFromImage(fastMarchingOutput))
+utils.display_image(sitk.GetArrayFromImage(fastMarchingOutput))
 
 
 # rescale = sitk.RescaleIntensityImageFilter()
@@ -144,6 +144,8 @@ lsFilter.SetVolume(0.0)
 lsFilter.SetVolumeMatchingWeight(0.0)
 lsFilter.SetHeavisideStepFunction(lsFilter.AtanRegularizedHeaviside)
 output = lsFilter.Execute(fastMarchingOutput, rescale_gray)
+
+utils.display_image(sitk.GetArrayFromImage(output))
 
 binary_filter = sitk.BinaryFillholeImageFilter()
 binary_filter.FullyConnectedOff()

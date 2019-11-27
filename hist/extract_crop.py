@@ -10,8 +10,8 @@ logging.basicConfig(level=logging.WARNING)
 
 
 
-top_dir = "/media/store/krs/caseFiles"
-#top_dir = "/Volumes/SD/caseFiles"
+#top_dir = "/media/store/krs/caseFiles"
+top_dir = "/Volumes/SD/caseFiles"
 #top_dir = "/media/sansomk/510808DF6345C808/caseFiles"
 
 # this tool will create all cropped images
@@ -264,7 +264,8 @@ for f_in, region, im_out, color_out in zip(in_stack, region_list, crop_stack, co
     # b = crop.extract_band(2).cast("ushort")
     # convert to luminesence (maybe not the best idea, but probably ok for registration)
     # may be a bad choice for 
-    gray = ((21 * r + 72 * g + 7 * b) // 100).cast("uchar")
+    # luminance
+    gray = ((30 * r + 59 * g + 11 * b) // 100).cast("uchar")
     #gray = ((r + g + b) // 3).cast("uchar")
 
     blank = pyvips.Image.black(n_pow2, n_pow2, bands = 1)
