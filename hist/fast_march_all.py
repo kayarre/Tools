@@ -93,6 +93,10 @@ class PipeLine:
     self.rescale_1.SetOutputMinimum(0.0)
     self.rescale_1.SetOutputMaximum(1.0)
 
+    self.rescale_speed = sitk.RescaleIntensityImageFilter()
+    self.rescale_speed.SetOutputMinimum(-1.0)
+    self.rescale_speed.SetOutputMaximum(1.0)
+
     self.sigmoid = sitk.SigmoidImageFilter()
     self.sigmoid.SetOutputMinimum(0.0)
     self.sigmoid.SetOutputMaximum(1.0)
@@ -241,9 +245,9 @@ def main():
     # new_sitk_image.SetDirection(itk.GetArrayFromMatrix(grayscale.GetDirection()).flatten())
     new_sitk_image = utils.get_sitk_image(in_image, spacing)
     inputImage = sitk.Cast(new_sitk_image, sitk.sitkFloat64)
-    shift_im = sitk.ShiftScale(	inputImage, shift = 128, scale = 1.0 )	
-    rescale_in = pipe.rescaleUIint8.Execute(shift_im)
-    utils.display_image(sitk.GetArrayFromImage(rescale_in))
+    #shift_im = sitk.ShiftScale(	inputImage, shift = 128, scale = 1.0 )	
+    #rescale_in = pipe.rescaleUIint8.Execute(shift_im)
+    #utils.display_image(sitk.GetArrayFromImage(rescale_in))
 
     time_step = 0.8*(spacing[0] / (2.0**3.0))
     print(time_step)
@@ -255,7 +259,6 @@ def main():
     grad_mag = pipe.gradmag.Execute(smoothingOutput)
     utils.display_image(sitk.GetArrayFromImage(grad_mag))
 
-    	
 
     rescale_gray = pipe.rescaleUIint8.Execute(grad_mag)
     utils.display_image(sitk.GetArrayFromImage(rescale_gray))

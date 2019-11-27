@@ -10,8 +10,8 @@ logging.basicConfig(level=logging.WARNING)
 
 
 
-#top_dir = "/media/store/krs/caseFiles"
-top_dir = "/Volumes/SD/caseFiles"
+top_dir = "/media/store/krs/caseFiles"
+#top_dir = "/Volumes/SD/caseFiles"
 #top_dir = "/media/sansomk/510808DF6345C808/caseFiles"
 
 # this tool will create all cropped images
@@ -42,6 +42,8 @@ out_dir = 'vwi_proc'
 
 in_dir_path = os.path.join(top_dir, in_dir)
 out_dir_top = os.path.join(top_dir, out_dir)
+
+skip_color = True
 
 
 
@@ -264,7 +266,7 @@ for f_in, region, im_out, color_out in zip(in_stack, region_list, crop_stack, co
     # b = crop.extract_band(2).cast("ushort")
     # convert to luminesence (maybe not the best idea, but probably ok for registration)
     # may be a bad choice for 
-    # luminance
+    # luminance from itk
     gray = ((30 * r + 59 * g + 11 * b) // 100).cast("uchar")
     #gray = ((r + g + b) // 3).cast("uchar")
 
@@ -274,52 +276,10 @@ for f_in, region, im_out, color_out in zip(in_stack, region_list, crop_stack, co
                     blank.get("width"), blank.get("height"),
                     extend="VIPS_EXTEND_COPY")
 
-    blur = blank.gaussblur(8)
+    blur = blank.gaussblur(32)
     mapped_blur = blur.insert(gray, shift_x, shift_y)
-    # blank_left  =  blank.draw_smudge(0, 0, shift_x, n_pow2)
-    # blank_right =  blank_left.draw_smudge(n_pow2 - shift_x, 0, shift_x, n_pow2)
-    # blank_top   =  blank_right.draw_smudge(shift_x, 0, width, shift_y)
-    # blank_bot   =  blank_top.draw_smudge(shift_x, n_pow2 - shift_y, width, shift_y)
-
-    color = pyvips.Image.black(n_pow2, n_pow2, bands = 3)
-    color = crop.embed(
-                    shift_x, shift_y,
-                    color.get("width"), color.get("height"),
-                    #extend="VIPS_EXTEND_WHITE")
-                    extend="VIPS_EXTEND_COPY")
-
-    blur_color = color.gaussblur(8)
-    mapped_blur_color = blur_color.insert(crop, shift_x, shift_y)
-    
-    # color_left  =  color.draw_smudge(0, 0, shift_x, n_pow2)
-    # color_right =  color_left.draw_smudge(n_pow2 - shift_x, 0, shift_x, n_pow2)
-    # color_top   =  color_right.draw_smudge(shift_x, 0, width, shift_y)
-    # color_bot   =  color_top.draw_smudge(shift_x, n_pow2 - shift_y, width, shift_y)
-
     invert = mapped_blur.invert()
 
-    # np_2d = np.ndarray(buffer=invert.write_to_memory(),
-    #                dtype=format_to_dtype[invert.format],
-    #                shape=[invert.height, invert.width])
-    # mpp_x = float(im.get("openslide.mpp-x"))
-    # wgt_x = np.linspace(mpp_x/2.0, mpp_x/2.0*(n_pow2-1), n_pow2)
-    # # mpp_y = float(im.get("openslide.mpp-y"))
-    # # wgt_y = np.linspace(mpp_y/2.0, mpp_y/2.0*(n_pow2-1), n_pow2)
-    # wgt_y = wgt_x
-    # x_avg = np_2d.average(axis=0, weights=wgt_x)
-    # y_avg = np_2d.average(axis=1, weights=wgt_y)
-    # avg = np.average(np_2d)
-    
-        
-    #test = indx * blank.invert()
-
-    # indx = pyvips.Image.xyz(n_pow2, n_pow2)
-    #indx.tiffsave("test3.tif", compression = "VIPS_FOREIGN_TIFF_COMPRESSION_DEFLATE")
-    # x = indx.extract_band(0)
-    # y = indx.extract_band(1)
-    # img_avg = invert.avg()
-    # x_bar = (x * invert).avg() / img_avg
-    # y_bar = (y * invert).avg() / img_avg
 
     # print(x_bar, y_bar)
     #print(im.get("xres"), im.get("yres"))
@@ -349,23 +309,34 @@ for f_in, region, im_out, color_out in zip(in_stack, region_list, crop_stack, co
                 tile_height=n_pow2 // (2**n_pages),
                 pyramid=True)#, resunit="mm")
 
-    test_color = mapped_blur_color.copy(xres = x_res,
+
+    if( not skip_color):
+        color = pyvips.Image.black(n_pow2, n_pow2, bands = 3)
+        color = crop.embed(
+                        shift_x, shift_y,
+                        color.get("width"), color.get("height"),
+                        #extend="VIPS_EXTEND_WHITE")
+                        extend="VIPS_EXTEND_COPY")
+
+        blur_color = color.gaussblur(32)
+        mapped_blur_color = blur_color.insert(crop, shift_x, shift_y)
+
+        test_color = mapped_blur_color.copy(xres = x_res,
                             yres = y_res,
                            )
-    
-    test_color.set_type(pyvips.GValue.gstr_type, "resolution-unit", "mm")
-    for field, data in im_dict.items():
-        test_color.set_type(data[0], field, data[1])
-        #print(field, test.get(field))
+        test_color.set_type(pyvips.GValue.gstr_type, "resolution-unit", "mm")
+        for field, data in im_dict.items():
+            test_color.set_type(data[0], field, data[1])
+            #print(field, test.get(field))
 
-    print("writing color {0}".format(color_out))
-    test_color.tiffsave(color_out, compression = "VIPS_FOREIGN_TIFF_COMPRESSION_DEFLATE",
-                properties=True, strip=False,
-                tile=True,
-                tile_width=n_pow2 // (2**n_pages),
-                tile_height=n_pow2 // (2**n_pages),
-                pyramid=True)#, resunit="mm")
-    # create an image of size 
+        print("writing color {0}".format(color_out))
+        test_color.tiffsave(color_out, compression = "VIPS_FOREIGN_TIFF_COMPRESSION_DEFLATE",
+                    properties=True, strip=False,
+                    tile=True,
+                    tile_width=n_pow2 // (2**n_pages),
+                    tile_height=n_pow2 // (2**n_pages),
+                    pyramid=True)#, resunit="mm")
+        # create an image of size 
 
     
     # crop_res = im.extract_area(region["left"], region["top"],
