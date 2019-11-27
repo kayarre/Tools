@@ -1,6 +1,7 @@
 import numpy as np
 import tifffile as tiff
 import SimpleITK as sitk
+import networkx as nx
 
 import matplotlib.pyplot as plt
 
@@ -30,8 +31,38 @@ dtype_to_format = {
     'complex128': 'dpcomplex',
 }
 
+def read_tiff_image(reg_dict, page_index=0):
+  # print(fixed[1]["crop_paths"])
+  # load color images
+  ff_path = reg_dict["f_row"]["color_paths"]
+  tf_path = reg_dict["t_row"]["color_paths"]
 
-def _calculate_composite(G, moving_slice_index):
+  # base_res_x = reg_dict["f_row"]["mpp-x"]
+  # base_res_y = reg_dict["f_row"]["mpp-y"]
+
+  for page in reg_dict["f_page"]:
+      if page["index"] != page_index:
+          continue
+      break
+  page_idx = page["index"]
+
+  #print(page_idx, page)
+  spacing = (page["mmp_x"], page["mmp_y"])
+  #print(spacing)
+  # transform numpy array to simpleITK image
+  # have set the parameters manually
+  im_f = tiff.imread(ff_path, key=page_idx)
+  # f_sitk = utils.get_sitk_image(im_f, spacing)
+  f_sitk = get_sitk_image(im_f[:, :, :3], spacing=spacing, vector=True)
+
+  im_t = tiff.imread(tf_path, key=page_idx)
+  # t_sitk = utils.get_sitk_image(im_t, spacing)
+  t_sitk = get_sitk_image(im_t[:, :, :3], spacing=spacing, vector=True)
+
+  return f_sitk, t_sitk
+
+
+def _calculate_composite(G, reference_index, moving_slice_index):
   """
   Composes individual partial transformations into composite
   transformation registering provided moving slice to the reference
@@ -43,26 +74,27 @@ def _calculate_composite(G, moving_slice_index):
   # The transformation chain is a sequence of pairs of (fixed, moving)
   # slices. This sequence links the reference slices with given moving
   # slice.
-  transformation_chain = _get_transformation_chain(G, moving_slice_index)
+  transformation_chain = _get_transformation_chain(G, reference_index, moving_slice_index)
   # Initialize the partial transforms array and then collect all partial
   # transformations constituting given composite transformation.
   partial_transformations = []
   for (m_slice, r_slice) in transformation_chain:
-    partial_transformations.append(
     if (G.has_edge(m_slice, r_slice)):
       data = G.get_edge_data(m_slice, r_slice)
       partial_transformations.append(data["transform"])
 
   return partial_transformations
 
-def _get_transformation_chain(G, moving_index):
-  # r is the reference image, normally pick on in the middle, but don't trust it
-  r = 0
- # Calculate shortest paths between individual slices
+def _get_transformation_chain(G, reference_index, moving_index):
+  i = moving_index
+  r = reference_index
+  # Calculate shortest paths between individual slices
+  # Dictionary, keyed by source and target, of shortest paths.
   slice_paths = nx.all_pairs_dijkstra_path(G)
   # Get the shortest path linking given moving slice with the reference
   # slice.
-  path = list(reversed(slice_paths[r][moving_index]))
+  #
+  path = list(reversed(dict(slice_paths)[r][i]))
   chain = []
 
   # In case we hit a reference slice :)
@@ -138,13 +170,12 @@ def get_additional_info(pd_data):
 
 # Callback invoked by the interact IPython method for scrolling through the image stacks of
 # the two images (moving and fixed).
-def display_images(fixed_npa, moving_npa, checkerboard="None", show=True):
+def display_images(fixed_npa, moving_npa, checkerboard=None, show=True):
     # Create a figure with two subplots and the specified size.
     w = 3
-    #TODO fix this with a different check
-    if (checkerboard == "None"):
+    if (checkerboard is None):
       w = 2
-    fig, ax = plt.subplots(1, w, figsize=(10,8))
+    fig, ax = plt.subplots(1, w, figsize=(12,4))
     #plt.subplots(1,w,figsize=(10,8))
     
     # Draw the fixed image in the first subplot.
@@ -159,8 +190,7 @@ def display_images(fixed_npa, moving_npa, checkerboard="None", show=True):
     ax[1].set_title('moving image')
     ax[1].set_axis_off()
 
-    #TODO fix this with a different check
-    if (checkerboard != "None"):
+    if (checkerboard is not None):
       #plt.subplot(1,3,3)
       ax[2].imshow(checkerboard[:,:],cmap=plt.cm.Greys_r)
       ax[2].set_title('checkerboard')
@@ -170,6 +200,20 @@ def display_images(fixed_npa, moving_npa, checkerboard="None", show=True):
         plt.show()
     else:
         return fig
+    #plt.pause(0.0001)
+
+def display_image(fixed_npa):
+    # Create a figure with two subplots and the specified size.
+    fig, ax = plt.subplots(1, 1, figsize=(10,8))
+    #plt.subplots(1,w,figsize=(10,8))
+    
+    # Draw the fixed image in the first subplot.
+    #plt.subplot(1,3,1)
+    ax.imshow(fixed_npa[:,:],cmap=plt.cm.Greys_r)
+    ax.set_title('seg image')
+    ax.set_axis_off()
+    plt.show()
+    #plt.close(fig)
     #plt.pause(0.0001)
 
 # Callback invoked by the IPython interact method for scrolling and modifying the alpha blending

@@ -155,9 +155,7 @@ def stage_1b_transform(reg_dict, n_max, initial_transform, count=0):
   count = 0
   while (exception == True) and (count < 20):
     try:
-      # Don't optimize in-place, we would possibly like to run this cell multiple times.
       elastix.Execute()
-      #print("was here")
     except RuntimeError as e:
       count += 1
       print("Got an exception\n" + str(e))

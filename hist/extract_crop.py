@@ -10,8 +10,8 @@ logging.basicConfig(level=logging.WARNING)
 
 
 
-#top_dir = "/media/store/krs/caseFiles"
-top_dir = "/Volumes/SD/caseFiles"
+top_dir = "/media/store/krs/caseFiles"
+#top_dir = "/Volumes/SD/caseFiles"
 #top_dir = "/media/sansomk/510808DF6345C808/caseFiles"
 
 # this tool will create all cropped images
@@ -19,6 +19,8 @@ top_dir = "/Volumes/SD/caseFiles"
 
 # this df contains all the case information
 df_name = "process_df.pkl"
+csv_file = "case_1.csv"
+pkl_file = "case_1.pkl"
 #df_path = "/Volumes/SD/caseFiles/vwi_proj"
 df_file_path = os.path.join(top_dir, df_name)
 df = pd.read_pickle(df_file_path)
@@ -270,6 +272,14 @@ for f_in, region, im_out, color_out in zip(in_stack, region_list, crop_stack, co
                     shift_x, shift_y,
                     blank.get("width"), blank.get("height"),
                     extend="VIPS_EXTEND_COPY")
+
+    blur = blank.gaussblur(8)
+    mapped_blur = blur.insert(gray, shift_x, shift_y)
+    # blank_left  =  blank.draw_smudge(0, 0, shift_x, n_pow2)
+    # blank_right =  blank_left.draw_smudge(n_pow2 - shift_x, 0, shift_x, n_pow2)
+    # blank_top   =  blank_right.draw_smudge(shift_x, 0, width, shift_y)
+    # blank_bot   =  blank_top.draw_smudge(shift_x, n_pow2 - shift_y, width, shift_y)
+
     color = pyvips.Image.black(n_pow2, n_pow2, bands = 3)
     color = crop.embed(
                     shift_x, shift_y,
@@ -277,7 +287,15 @@ for f_in, region, im_out, color_out in zip(in_stack, region_list, crop_stack, co
                     #extend="VIPS_EXTEND_WHITE")
                     extend="VIPS_EXTEND_COPY")
 
-    invert = blank.invert()
+    blur_color = color.gaussblur(8)
+    mapped_blur_color = blur_color.insert(crop, shift_x, shift_y)
+    
+    # color_left  =  color.draw_smudge(0, 0, shift_x, n_pow2)
+    # color_right =  color_left.draw_smudge(n_pow2 - shift_x, 0, shift_x, n_pow2)
+    # color_top   =  color_right.draw_smudge(shift_x, 0, width, shift_y)
+    # color_bot   =  color_top.draw_smudge(shift_x, n_pow2 - shift_y, width, shift_y)
+
+    invert = mapped_blur.invert()
 
     # np_2d = np.ndarray(buffer=invert.write_to_memory(),
     #                dtype=format_to_dtype[invert.format],
@@ -330,7 +348,7 @@ for f_in, region, im_out, color_out in zip(in_stack, region_list, crop_stack, co
                 tile_height=n_pow2 // (2**n_pages),
                 pyramid=True)#, resunit="mm")
 
-    test_color = color.copy(xres = x_res,
+    test_color = mapped_blur_color.copy(xres = x_res,
                             yres = y_res,
                            )
     
@@ -360,8 +378,8 @@ df_test["yres"] = y_res_list
 df_test["mpp-x"] = mpp_x_list
 df_test["mpp-y"] = mpp_y_list
 
-df_test.to_csv(os.path.join(top_dir,  "case_1.csv"))
-df_test.to_pickle(os.path.join(top_dir, "case_1.pkl"))
+df_test.to_csv(os.path.join(top_dir,  csv_file))
+df_test.to_pickle(os.path.join(top_dir, pkl_file))
 
 # need to figure out the command to embed a picture in a larger picture
 # only care about shifting the first image I think

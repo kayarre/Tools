@@ -6,6 +6,7 @@ import pandas as pd
 # import numpy as np
 import SimpleITK as sitk
 import networkx as nx
+import pickle
 
 # import itk
 import matplotlib.pyplot as plt
@@ -20,6 +21,10 @@ logging.basicConfig(level=logging.WARNING)
 
 # from read_vips import parse_vips
 from utils import get_additional_info
+from utils import _calculate_composite
+from utils import read_tiff_image
+from utils import get_mean_edges
+from utils import resample_rgb
 from stage_1_registration import stage_1_transform
 from stage_1_parallel import stage_1_parallel_metric
 from stage_1b_registration import stage_1b_transform
@@ -45,11 +50,12 @@ def main():
 
   # print(df.head())
 
-  relabel_paths = True
-  in_dir = "vwi_proj"
-  out_dir = "vwi_proc"
+  #relabel_paths = True
+  #in_dir = "vwi_proj"
+  #out_dir = "vwi_proc"
   trans_dir = "vwi_trans"
   image_dir = "images"
+  resample_dir = "resample"
   #print(df.head())
   #print(df.columns)
   # print(df["Image_ID"].values.dtype)
@@ -59,7 +65,7 @@ def main():
   # test_reg = register_series()
 
   # this is the registration loop
-  tmp_index = 0
+  reference_index = 0
   reg_n = {}
   epsilon = 3
   lambda_ = 1.0
@@ -127,7 +133,7 @@ def main():
         transform_path = os.path.join(top_dir, affine_name)
         sitk.WriteTransform(best_reg_s1b["transform"], transform_path)
 
-        abs_ij = np.abs(i-j)
+        abs_ij = abs(i-j)
         # this is the metric from the possum framework
         weight = (1.0 + best_reg_s1b["measure"]) * abs_ij * (1.0 + lambda_)**(abs_ij) 
         G.add_edge(i, j, weight = weight,
@@ -148,24 +154,51 @@ def main():
         #best_reg_s3 = stage_3_transform(reg_dict=reg_n[-1], n_max=2048, initial_transform=best_reg_s2)
         
         #print(best_reg_s1["measure"], best_reg_s1b["measure"])
-  pickle_path = os.path.join(top_dir, case_file.split(".")[0] + ".gpkl" )
-  nx.write_gpickle(G, pickle_path)
-  # r is the reference image, normally pick on in the middle, but don't trust it
-  r = 0
-  # Calculate shortest paths between individual slices
-  slice_paths = nx.all_pairs_dijkstra_path(G)
-  # Get the shortest path linking given moving slice with the reference
-  # slice.
-  path = list(reversed(slice_paths[r][i]))
-  chain = []
 
-  # In case we hit a reference slice :)
-  if i == r:
-    chain.append((r, r))
-  # For all the other cases collect partial transforms.
-  for step in range(len(path) - 1):
-    chain.append((path[step], path[step + 1]))
-  #return chain
+  # save the registration data
+  reg_path = os.path.join(top_dir, case_file.split(".")[0] + "_reg_data.pkl" )
+  with open(reg_path, 'wb') as f:
+    pickle.dump(reg_n, f)
+
+  # remove transforms in case they can't be pickled
+  new_G = G.copy()
+  for n1, n2, d in new_G.edges(data=True):
+    for att in ["transform"]:
+        nothing = d.pop(att, None)
+  
+  pickle_path2 = os.path.join(top_dir, case_file.split(".")[0] + "_2.gpkl" )
+  nx.write_gpickle(new_G, pickle_path2)
+
+  pickle_path = os.path.join(top_dir, case_file.split(".")[0] + ".gpkl" )
+  try:
+    nx.write_gpickle(G, pickle_path)
+  except Exception as e:
+    #except pickle.PicklingError as e:
+    print(" Cannot pickle this thing {0}".format(e))
+  
+  # TODO make another script that can generate this from saved transforms and graph 
+  for j in range(n_rows):
+    # j is the moving image
+    trans_list = _calculate_composite(G, reference_index, j)
+    # Instanciate composite transform which will handle all the partial
+    # transformations.
+    composite_transform = sitk.Transform()
+    # Fill the composite transformation with the partial transformations:
+    for transform in trans_list:
+        composite_transform.AddTransform(transform)
+
+    reg_key = (reference_index, j)
+    if (reg_key in reg_n.keys()):
+      f_sitk, t_sitk = read_tiff_image(reg_n[reg_key], page_index=4)
+      new_image = resample_rgb(composite_transform,
+                               f_sitk,
+                               t_sitk,
+                               mean=get_mean_edges(t_sitk)
+                              )
+      resample_image =  os.path.join(top_dir, resample_dir, "resample_affine_{0}.png".format(j))
+      writer = sitk.ImageFileWriter()
+      writer.SetFileName(resample_image)
+      writer.Execute(new_image)
 
 if __name__ == "__main__":
   main()

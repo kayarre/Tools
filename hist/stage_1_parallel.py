@@ -15,9 +15,10 @@ import utils #import get_sitk_image, display_images
 # This function evaluates the metric value in a thread safe manner
 def evaluate_metric(current_rotation, tx, f_image, m_image):
     registration_method = sitk.ImageRegistrationMethod()
-    registration_method.SetMetricAsANTSNeighborhoodCorrelation(radius=4)
-    #n_bins = int(np.cbrt(np.prod(sitk.GetArrayViewFromImage(f_image).shape)))
-    #registration_method.SetMetricAsMattesMutualInformation(numberOfHistogramBins=50)
+    #registration_method.SetMetricAsANTSNeighborhoodCorrelation(radius=4)
+    n_bins = int(np.cbrt(np.prod(sitk.GetArrayViewFromImage(f_image).shape)))
+    registration_method.SetMetricAsMattesMutualInformation(     
+        numberOfHistogramBins=n_bins)
     registration_method.SetMetricSamplingStrategy(registration_method.RANDOM)
     registration_method.SetMetricSamplingPercentage(0.2)
     registration_method.SetInterpolator(sitk.sitkLinear)
@@ -67,6 +68,7 @@ def evaluate_metric_extra(current_page, f_image, m_image, angles):
                                     f_image = sitk.Cast(f_sitk, sitk.sitkFloat32),
                                     m_image = sitk.Cast(t_sitk, sitk.sitkFloat32)),
                             angles)
+    # this leaks if you don't close it
     p.close()
     #print(all_metric_values)
     best_orientation = angles[np.argmin(all_metric_values)]
@@ -104,6 +106,7 @@ def stage_1_parallel_metric(reg_dict, n_max, count=0):
                                     m_image = tf_path,
                                     angles = n_angles),
                             page_list)
+    # this leaks if you don't close it
     p_page.close()
     result = {}
     metric = 99999999.0
