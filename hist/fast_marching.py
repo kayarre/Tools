@@ -1,9 +1,4 @@
-#!/usr/bin/env python
-
-from __future__ import print_function
-
 import SimpleITK as sitk
-import sys
 import os
 import utils
 import tifffile as tiff
@@ -19,7 +14,7 @@ top_dir = "/media/store/krs/caseFiles/vwi_proc/"
 #top_dir = "/media/sansomk/510808DF6345C808/caseFiles/vwi_proc/"
 
 # this works for rgb, but not
-fixed = os.path.join(top_dir, "case01/color_case_1_im_0001.tiff")
+fixed = os.path.join(top_dir, "case01/color_case_1_im_0000.tiff")
 
 im_f = tiff.imread(fixed, key=8)
 spacing = ( 2.02, 2.02)
