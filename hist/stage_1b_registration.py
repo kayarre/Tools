@@ -18,8 +18,8 @@ logging.basicConfig(level=logging.WARNING)
 import utils  # import get_sitk_image, display_images
 
 #elastic_dir = "/media/sansomk/510808DF6345C808/caseFiles/elastix"
-#elastic_dir = "/Volumes/SD/caseFiles/elastix"
-elastic_dir = "/media/store/krs/caseFiles/elastix"
+elastic_dir = "/Volumes/SD/caseFiles/elastix"
+#elastic_dir = "/media/store/krs/caseFiles/elastix"
 
 
 

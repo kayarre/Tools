@@ -3,6 +3,7 @@ import pickle
 import numpy as np
 import tifffile as tiff
 import SimpleITK as sitk
+import os
 #import itk
 
 # from ipywidgets import interact, fixed
@@ -16,10 +17,13 @@ import utils #import get_sitk_image, display_images
 
 
 # n_max is the maxmimum picture size for registration
-def stage_1_transform(reg_dict, n_max, init_angle, count=0):
+def stage_1_transform(reg_dict, n_max, init_params, count=0):
     #print(fixed[1]["crop_paths"])
     ff_path = reg_dict["f_row"]["crop_paths"]
     tf_path = reg_dict["t_row"]["crop_paths"]
+
+    ff_mask_path = reg_dict["f_row"]["mask_path"]
+    tf_mask_path = reg_dict["t_row"]["mask_path"]
 
     #base_res_x = reg_dict["f_row"]["mpp-x"]
     #base_res_y = reg_dict["f_row"]["mpp-y"]
@@ -36,19 +40,20 @@ def stage_1_transform(reg_dict, n_max, init_angle, count=0):
     # transform numpy array to simpleITK image
     # have set the parameters manually
     im_f = tiff.imread(ff_path, key=page_idx)
-    n_bins = int(np.cbrt(np.prod(im_f.shape)))
-    #print(n_bins)
-    #f_cog = get_center_of_gravity(im_f, spacing)
     f_sitk = utils.get_sitk_image(im_f, spacing)
+    im_mask_f = sitk.ReadImage(ff_mask_path)
+    identity = sitk.Transform(im_mask_f.GetDimension(), sitk.sitkIdentity)
+    f_mask_resampled = sitk.Resample(im_mask_f, f_sitk,
+                                      identity, sitk.sitkNearestNeighbor,
+                                      0.0, im_mask_f.GetPixelID())
 
+   
     im_t = tiff.imread(tf_path, key=page_idx)
-
-    #t_cog = get_center_of_gravity(im_t, spacing)
     t_sitk = utils.get_sitk_image(im_t, spacing)
-
-    #cog_diff = [ a-b for a,b in zip(f_cog, t_cog)]
-    #trans = sitk.Euler2DTransform()
-    #trans.SetTranslation(cog_diff)
+    im_mask_t = sitk.ReadImage(tf_mask_path)
+    t_mask_resampled = sitk.Resample(im_mask_t, t_sitk,
+                                      identity, sitk.sitkNearestNeighbor,
+                                      0.0, im_mask_t.GetPixelID())
 
     initial_transform = sitk.CenteredTransformInitializer(f_sitk, 
                                                       t_sitk, 
@@ -62,8 +67,8 @@ def stage_1_transform(reg_dict, n_max, init_angle, count=0):
     # take the best guess and then get  a range of
     # angles that span the plus or minus 5/7 of one "tick"
     # in rotation from the guess
-    best_init = init_angle["best_angle"]
-    angle_range = (5.0 / 7.0) * 2.0 * np.pi / init_angle["n_angles"]
+    best_init = init_params["best_angle"]
+    angle_range = (5.0 / 7.0) * 2.0 * np.pi / init_params["n_angles"]
     n_angles = np.linspace(best_init-angle_range, best_init+angle_range, 5)
     #print(n_angles)
     best_reg = {}
@@ -74,7 +79,12 @@ def stage_1_transform(reg_dict, n_max, init_angle, count=0):
     #rot.SetCenter(center)
 
     reg_method = sitk.ImageRegistrationMethod()
+    reg_method.SetMetricFixedMask(f_mask_resampled)
+    reg_method.SetMetricMovingMask(t_mask_resampled)
 
+
+    cnt_pixels = np.count_nonzero(sitk.GetArrayViewFromImage(t_mask_resampled))
+    n_bins = int(np.cbrt(cnt_pixels))
     # Similarity metric settings.
     reg_method.SetMetricAsMattesMutualInformation(numberOfHistogramBins=n_bins)
     #reg_method.SetMetricAsANTSNeighborhoodCorrelation(radius=4)
@@ -145,18 +155,18 @@ def stage_1_transform(reg_dict, n_max, init_angle, count=0):
     print('Final metric value: {0}'.format(best_reg["measure"]))
     print('Optimizer\'s stopping condition, {0}'.format(best_reg["stop_cond"]))
 
-    # moving_resampled = sitk.Resample(t_sitk, f_sitk,
-    #                                  best_reg["transform"], sitk.sitkLinear,
-    #                                  0.0, t_sitk.GetPixelID())
+    moving_resampled = sitk.Resample(t_sitk, f_sitk,
+                                     best_reg["transform"], sitk.sitkLinear,
+                                     0.0, t_sitk.GetPixelID())
 
-    # checkerboard = sitk.CheckerBoardImageFilter()
-    # check_im = checkerboard.Execute(f_sitk, moving_resampled)
+    checkerboard = sitk.CheckerBoardImageFilter()
+    check_im = checkerboard.Execute(f_sitk, moving_resampled)
 
-    # utils.display_images(
-    #     fixed_npa=sitk.GetArrayViewFromImage(f_sitk),
-    #     moving_npa=sitk.GetArrayViewFromImage(moving_resampled),
-    #     checkerboard=sitk.GetArrayViewFromImage(check_im)
-    # )
+    utils.display_images(
+        fixed_npa=sitk.GetArrayViewFromImage(f_sitk),
+        moving_npa=sitk.GetArrayViewFromImage(moving_resampled),
+        checkerboard=sitk.GetArrayViewFromImage(check_im)
+    )
 
     
     #print(stuff)
@@ -166,7 +176,7 @@ def stage_1_transform(reg_dict, n_max, init_angle, count=0):
         # try up to two more times
         if(count < 2):
             count += 1
-            best_reg = stage_1_transform(reg_dict, n_max, init_angle, count)
+            best_reg = stage_1_transform(reg_dict, n_max, init_params, count)
         else:
             break
         # else:
@@ -174,7 +184,7 @@ def stage_1_transform(reg_dict, n_max, init_angle, count=0):
         #     new_max = n_max*2.0
         #     if (new_max <= (reg_dict["f_page"][0]['size_x'] // 8 ) ):
         #         print("Increasing the image resolution to {0}".format(new_max))
-        #         best_reg = stage_1_transform(reg_dict, new_max, init_angle, 0)
+        #         best_reg = stage_1_transform(reg_dict, new_max, init_params, 0)
         #     else:
         #         print("I have run out of resolution")
         #         break
@@ -219,7 +229,7 @@ class register_series:
         self.moving = sitk.ReadImage(self.cur_file_name, sitk.sitkInt16)
         sz = self.moving.GetSize()
         print(self.moving.GetDirection())
-        thickness = str(self.cur_data["slice_thickness"] + self.cur_data["gap"])
+        # thickness = str(self.cur_data["slice_thickness"] + self.cur_data["gap"])
         spacing = (self.cur_data["mpp-x"], self.cur_data["mpp-y"])
         self.trans_param_map["Spacing"] = [str(spacing[0]), str(spacing[1])]
         self.trans_param_map["Size"] = [str(sz[0]), str(sz[1])]

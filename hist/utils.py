@@ -147,7 +147,7 @@ def get_additional_info(pd_data):
     base_res_x = pd_data["mpp-x"]
     base_res_y = pd_data["mpp-y"]
 
-    print(base_res_x, base_res_y)
+    #print(base_res_x, base_res_y)
     #meta_data_orig = parse_vips(ff.pages[0].description)
 
     base_shape = ff.pages[0].shape

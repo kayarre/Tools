@@ -13,14 +13,19 @@ logging.basicConfig(level=logging.WARNING)
 import utils #import get_sitk_image, display_images
 
 # This function evaluates the metric value in a thread safe manner
-def evaluate_metric(current_rotation, tx, f_image, m_image):
+def evaluate_metric(current_rotation, tx, f_image, f_mask, m_image, m_mask):
     registration_method = sitk.ImageRegistrationMethod()
+    registration_method.SetMetricFixedMask(f_mask)
+    registration_method.SetMetricMovingMask(m_mask)
+    #print(f_mask < 1)
     #registration_method.SetMetricAsANTSNeighborhoodCorrelation(radius=4)
-    n_bins = int(np.cbrt(np.prod(sitk.GetArrayViewFromImage(f_image).shape)))
+    cnt_pixels = np.count_nonzero(sitk.GetArrayViewFromImage(m_mask))
+    n_bins = int(np.cbrt(cnt_pixels))
+    # n_bins = int(np.cbrt(np.prod(sitk.GetArrayViewFromImage(f_image).shape)))
     registration_method.SetMetricAsMattesMutualInformation(     
-        numberOfHistogramBins=n_bins)
+         numberOfHistogramBins=n_bins)
     registration_method.SetMetricSamplingStrategy(registration_method.RANDOM)
-    registration_method.SetMetricSamplingPercentage(0.2)
+    registration_method.SetMetricSamplingPercentage(0.1)
     registration_method.SetInterpolator(sitk.sitkLinear)
     current_transform = sitk.Euler2DTransform(tx)
     current_transform.SetAngle(current_rotation)
@@ -44,17 +49,30 @@ def evaluate_metric(current_rotation, tx, f_image, m_image):
 
 # Threads of threads ?????
 # don't know if this makes sense
-def evaluate_metric_extra(current_page, f_image, m_image, angles):
+def evaluate_metric_extra(current_page,
+                          f_image, f_mask,
+                          m_image, m_mask, angles):
     page_idx = current_page["index"]
     spacing = ( current_page["mmp_x"], current_page["mmp_y"] )
     # transform numpy array to simpleITK image
     # have set the parameters manually
     im_f = tiff.imread(f_image, key=page_idx)
     f_sitk = utils.get_sitk_image(im_f, spacing)
+    im_mask_f = sitk.ReadImage(f_mask)
+    identity = sitk.Transform(im_mask_f.GetDimension(), sitk.sitkIdentity)
+    f_mask_resampled = sitk.Resample(im_mask_f, f_sitk,
+                                      identity, sitk.sitkNearestNeighbor,
+                                      0.0, im_mask_f.GetPixelID())
+    
     #im_f.close()
 
     im_t = tiff.imread(m_image, key=page_idx)
     t_sitk = utils.get_sitk_image(im_t, spacing)
+    im_mask_t = sitk.ReadImage(m_mask)
+
+    t_mask_resampled = sitk.Resample(im_mask_t, t_sitk,
+                                      identity, sitk.sitkNearestNeighbor,
+                                      0.0, im_mask_t.GetPixelID())
     #im_t.close()
 
     initial_transform = sitk.CenteredTransformInitializer(f_sitk, 
@@ -66,18 +84,76 @@ def evaluate_metric_extra(current_page, f_image, m_image, angles):
     all_metric_values = p.map(partial(evaluate_metric, 
                                     tx = initial_transform, 
                                     f_image = sitk.Cast(f_sitk, sitk.sitkFloat32),
-                                    m_image = sitk.Cast(t_sitk, sitk.sitkFloat32)),
-                            angles)
+                                    f_mask = sitk.Cast(f_mask_resampled, sitk.sitkFloat32),
+                                    m_image = sitk.Cast(t_sitk, sitk.sitkFloat32),
+                                    m_mask = sitk.Cast(t_mask_resampled, sitk.sitkFloat32)),
+                              angles)
     # this leaks if you don't close it
     p.close()
+    
     #print(all_metric_values)
     best_orientation = angles[np.argmin(all_metric_values)]
     #print('best orientation is: ' + str(best_orientation))
     param_test = {}
-    param_test[page_idx] = dict(angle=best_orientation,
+    param_test[page_idx] = dict(angle = best_orientation,
                                 metric = np.min(all_metric_values),
-                                size_x=current_page["size_x"],
-                                size_y=current_page["size_y"])
+                                size_x = current_page["size_x"],
+                                size_y = current_page["size_y"])
+
+    return param_test
+
+def evaluate_metric_flipped(current_page,
+                          f_image, f_mask,
+                          m_image, m_mask, angles):
+    page_idx = current_page["index"]
+    spacing = ( current_page["mmp_x"], current_page["mmp_y"] )
+    # transform numpy array to simpleITK image
+    # have set the parameters manually
+    im_f = tiff.imread(f_image, key=page_idx)
+    f_sitk = utils.get_sitk_image(im_f, spacing)
+    im_mask_f = sitk.ReadImage(f_mask)
+    identity = sitk.Transform(im_mask_f.GetDimension(), sitk.sitkIdentity)
+    f_mask_resampled = sitk.Resample(im_mask_f, f_sitk,
+                                      identity, sitk.sitkNearestNeighbor,
+                                      0.0, im_mask_f.GetPixelID())
+
+    #im_f.close()
+    # flip the moving image
+    im_t = tiff.imread(m_image, key=page_idx)
+    t_pre = utils.get_sitk_image(im_t, spacing)
+    t_sitk = sitk.Flip( t_pre, (True, False) )
+    pre_mask_t = sitk.ReadImage(m_mask)
+    im_mask_t = sitk.Flip( pre_mask_t, (True, False)  )
+
+    t_mask_resampled = sitk.Resample(im_mask_t, t_sitk,
+                                      identity, sitk.sitkNearestNeighbor,
+                                      0.0, im_mask_t.GetPixelID())
+    #im_t.close()
+
+    initial_transform = sitk.CenteredTransformInitializer(f_sitk, 
+                                                    t_sitk, 
+                                                    sitk.Euler2DTransform(), 
+                                                    sitk.CenteredTransformInitializerFilter.MOMENTS)
+
+    p = ThreadPool(len(angles))
+    all_metric_values = p.map(partial(evaluate_metric, 
+                                    tx = initial_transform, 
+                                    f_image = sitk.Cast(f_sitk, sitk.sitkFloat32),
+                                    f_mask = sitk.Cast(f_mask_resampled, sitk.sitkFloat32),
+                                    m_image = sitk.Cast(t_sitk, sitk.sitkFloat32),
+                                    m_mask = sitk.Cast(t_mask_resampled, sitk.sitkFloat32)),
+                              angles)
+    # this leaks if you don't close it
+    p.close()
+    
+    #print(all_metric_values)
+    best_orientation = angles[np.argmin(all_metric_values)]
+    #print('best orientation is: ' + str(best_orientation))
+    param_test = {}
+    param_test[page_idx] = dict(angle = best_orientation,
+                                metric = np.min(all_metric_values),
+                                size_x = current_page["size_x"],
+                                size_y = current_page["size_y"])
 
     return param_test
 
@@ -85,11 +161,13 @@ def evaluate_metric_extra(current_page, f_image, m_image, angles):
 def stage_1_parallel_metric(reg_dict, n_max, count=0):
     #print(fixed[1]["crop_paths"])
     ff_path = reg_dict["f_row"]["crop_paths"]
+    ff_mask_path = reg_dict["f_row"]["mask_path"]
     tf_path = reg_dict["t_row"]["crop_paths"]
+    tf_mask_path = reg_dict["t_row"]["mask_path"]
 
     #base_res_x = reg_dict["f_row"]["mpp-x"]
     #base_res_y = reg_dict["f_row"]["mpp-y"]
-    param_test = {}
+    #param_test = {}
     # get the best one over 30 rotationss
     n_angles = list(np.linspace(0.0, 2.0*np.pi * 63.0/64.0, 64))
     page_list = []
@@ -103,7 +181,58 @@ def stage_1_parallel_metric(reg_dict, n_max, count=0):
 
     list_dicts = p_page.map(partial(evaluate_metric_extra, 
                                     f_image = ff_path,
+                                    f_mask = ff_mask_path,
                                     m_image = tf_path,
+                                    m_mask = tf_mask_path,
+                                    angles = n_angles),
+                            page_list)
+    # this leaks if you don't close it
+    p_page.close()
+    result = {}
+    metric = 99999999.0
+    keep = None
+    idx = None
+    for d in list_dicts:
+        result.update(d)
+        for k, data in d.items():
+            if (data["metric"] < metric):
+                metric = data["metric"]
+                keep = d[k]
+                idx = k
+    result["n_angles"] = len(n_angles)
+    result["best_angle"] = keep["angle"]
+    result["best_metric"] = metric
+    result["best_page_idx"] = idx
+
+    return result
+
+def stage_1_parallel_metric_flip(reg_dict, n_max, count=0):
+    #print(fixed[1]["crop_paths"])
+    ff_path = reg_dict["f_row"]["crop_paths"]
+    ff_mask_path = reg_dict["f_row"]["mask_path"]
+    tf_path = reg_dict["t_row"]["crop_paths"]
+    tf_mask_path = reg_dict["t_row"]["mask_path"]
+
+    #base_res_x = reg_dict["f_row"]["mpp-x"]
+    #base_res_y = reg_dict["f_row"]["mpp-y"]
+    #param_test = {}
+    # get the best one over 30 rotationss
+    n_angles = list(np.linspace(0.1, 0.1 + 2.0*np.pi * 63.0/64.0, 64))
+    page_list = []
+    for page in reg_dict["f_page"]:
+        if( page["size_x"] > n_max):
+            continue
+        page_list.append(page)
+
+
+    p_page = ThreadPool(len(page_list))
+    #p_page = ThreadPool(1)
+
+    list_dicts = p_page.map(partial(evaluate_metric_flipped, 
+                                    f_image = ff_path,
+                                    f_mask = ff_mask_path,
+                                    m_image = tf_path,
+                                    m_mask = tf_mask_path,
                                     angles = n_angles),
                             page_list)
     # this leaks if you don't close it
