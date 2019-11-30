@@ -8,7 +8,7 @@ import tifffile as tiff
 import utils
 import itk
 import pandas as pd
-import numpy
+import numpy as np
 import matplotlib.pyplot as plt
 
 
@@ -84,10 +84,11 @@ class PipeLine:
     #self.smooth.SetTimeStep(0.0625)
     self.smooth.SetNumberOfIterations(5)
     self.smooth.SetConductanceParameter(9.0)
+    self.smooth.GlobalWarningDisplayOff()
 
     self.rescaleUIint8 = sitk.RescaleIntensityImageFilter()
     self.rescaleUIint8.SetOutputMinimum(0.0)
-    self.rescaleUIint8.SetOutputMaximum(255.0)
+    self.rescaleUIint8.SetOutputMaximum(254.0)
 
     self.rescale_1 = sitk.RescaleIntensityImageFilter()
     self.rescale_1.SetOutputMinimum(0.0)
@@ -100,15 +101,26 @@ class PipeLine:
     self.sigmoid = sitk.SigmoidImageFilter()
     self.sigmoid.SetOutputMinimum(0.0)
     self.sigmoid.SetOutputMaximum(1.0)
+    # self.sigmoid.SetBeta(32)#(0.2) defines the intensity around which the range is centered
+    # # alpha defines the width of the input intensity range
+    # self.sigmoid.SetAlpha(10)#(0.1)# Create an itk image from the simpleitk image via numpy array
+
     self.sigmoid.SetBeta(64)#(0.2) defines the intensity around which the range is centered
     # alpha defines the width of the input intensity range
     self.sigmoid.SetAlpha(32)#(0.1)# Create an itk image from the simpleitk image via numpy array
 
+
     self.gradmag = sitk.GradientMagnitudeRecursiveGaussianImageFilter()
-    self.sigma = 2.0
+    self.sigma = 4.0
     self.gradmag.SetSigma(self.sigma)
 
     self.march = sitk.FastMarchingUpwindGradientImageFilter()
+    #self.march.NormalizeAcrossScaleOn()
+    #self.march.SetSigma(2.0)
+    #self.march.DebugOn()
+    #self.march.GlobalDefaultDebugOn()
+
+    self.march2 = sitk.FastMarchingImageFilter()
 
     self.lsFilter = sitk.ScalarChanAndVeseDenseLevelSetImageFilter()
     self.lsFilter.UseImageSpacingOn()
@@ -147,13 +159,17 @@ class PipeLine:
     #self.mask_neg.SetMaskingValue(255)
     self.mask_neg.SetOutsideValue(0)
 
+    self.mask = sitk.MaskImageFilter()
+    self.mask.SetOutsideValue(0)
+
     self.checkerboard = sitk.CheckerBoardImageFilter()
 
-    self.thresh = sitk.BinaryThresholdImageFilter()
-    self.thresh.SetLowerThreshold(0.0)
-    self.thresh.SetUpperThreshold(0.3)
-    self.thresh.SetOutsideValue(0)
-    self.thresh.SetInsideValue(1)
+    self.thresh = sitk.ThresholdImageFilter() #BinaryThresholdImageFilter()
+    #self.thresh.ThresholdBelow(10)
+    #self.thresh.SetUpper(10)
+    #self.thresh.SetUpperThreshold(10)
+    #self.thresh.SetOutsideValue(0)
+    #self.thresh.SetInsideValue(0)
 
     self.writer = sitk.ImageFileWriter()
 
@@ -165,7 +181,8 @@ class PipeLine:
     self.cc = sitk.ConnectedComponentImageFilter()
     self.cc.FullyConnectedOff()
 
-    self.stats = sitk.LabelIntensityStatisticsImageFilter()
+    self.label_stats = sitk.LabelIntensityStatisticsImageFilter()
+    self.stats = sitk.StatisticsImageFilter()
 
     self.binary_opening = sitk.BinaryOpeningByReconstructionImageFilter()
     self.binary_opening.FullyConnectedOn()
@@ -174,11 +191,26 @@ class PipeLine:
     self.binary_opening.SetBackgroundValue(1.0)
     self.binary_opening.SetForegroundValue(0.0)
 
+    self.reciprocal = sitk.BoundedReciprocalImageFilter()
+
+    self.gauss = sitk.RecursiveGaussianImageFilter()
+    self.gauss.NormalizeAcrossScaleOn()
+    self.gauss.SetSigma(4.0)
+    self.gauss.SetOrder(0)
+
+    self.normalize = sitk.NormalizeImageFilter()
+
+    self.median = sitk.MedianImageFilter()
+
+    self.resample_nn = sitk.ResampleImageFilter() 
+    self.resample_nn.SetInterpolator(sitk.sitkNearestNeighbor)
+
 
 def main():
   # Create Masks for the images
 
   case_file = "case_1.pkl"
+  csv_file = "case_1.csv"
   #n_max = 256
   n_max = 128
 
@@ -186,6 +218,7 @@ def main():
   #top_dir = "/media/store/krs/caseFiles"
   # top_dir = "/media/sansomk/510808DF6345C808/caseFiles"
   pickle_path = os.path.join(top_dir, case_file)
+  csv_path = os.path.join(top_dir, csv_file)
   df = pd.read_pickle(pickle_path)
 
   mask_dir = "masks"
@@ -198,10 +231,15 @@ def main():
   mask_name_list = []
 
   pipe = PipeLine()
-
+  display_extra = False
   for idx, pd_data in df.iterrows():
-    if ( idx != 13):
-      continue
+    # if (idx in [0, 1, 14, 35, 37, 38 ]):
+    #   display_extra = True
+    # else:
+    #   display_extra = False
+    #   continue
+    # if ( idx != 14):
+    #   continue
     tiff_path = pd_data["crop_paths"] # ["color_paths"]
     page_data = utils.get_additional_info(pd_data)
 
@@ -210,11 +248,14 @@ def main():
             continue
         break
     page_idx = page["index"]
+    #print(page)
+    #quit()
     spacing = ( page["mmp_x"], page["mmp_y"] )
     print(spacing)
     in_image = tiff.imread(tiff_path, key=page_idx)
 
-    print(in_image.shape)
+    #print(in_image.shape, in_image.dtype)
+    #quit()
 
     # use corners for seeds
     shape = in_image.shape
@@ -249,106 +290,104 @@ def main():
     #rescale_in = pipe.rescaleUIint8.Execute(shift_im)
     #utils.display_image(sitk.GetArrayFromImage(rescale_in))
 
-    time_step = 0.8*(spacing[0] / (2.0**3.0))
-    print(time_step)
+    # dumb pixels
+    thresh = pipe.thresh.Execute(inputImage, 20, 10000, 0)
+
+    time_step = 0.8 * pipe.smooth.EstimateOptimalTimeStep(thresh) #0.8*(spacing[0] / (2.0**3.0))
+    #print(time_step)
     pipe.smooth.SetTimeStep(time_step)
-    smoothingOutput = pipe.smooth.Execute(inputImage)
-    utils.display_image(sitk.GetArrayFromImage(smoothingOutput))
+    smoothingOutput = pipe.smooth.Execute(thresh)
 
-    pipe.gradmag.SetSigma(2.0)
-    grad_mag = pipe.gradmag.Execute(smoothingOutput)
-    utils.display_image(sitk.GetArrayFromImage(grad_mag))
+    smooth2 = pipe.gauss.Execute(smoothingOutput)
 
-
-    rescale_gray = pipe.rescaleUIint8.Execute(grad_mag)
-    utils.display_image(sitk.GetArrayFromImage(rescale_gray))
-
-    sigmoidOutput = pipe.sigmoid.Execute(rescale_gray)
-    utils.display_image(sitk.GetArrayFromImage(sigmoidOutput))
-
-    invert = sitk.InvertIntensity(sigmoidOutput)
-    utils.display_image(sitk.GetArrayFromImage(invert))
+    grad_mag = pipe.gradmag.Execute(smooth2)
+    smooth3 = pipe.gauss.Execute(grad_mag)
+    norm_1 = pipe.normalize.Execute(smooth3)
 
     pipe.march.ClearTrialPoints()
     for pt in seedPositions:
       pipe.march.AddTrialPoint(pt)
-    fastMarchingOutput = pipe.march.Execute(sigmoidOutput)
-    utils.display_image(sitk.GetArrayFromImage(fastMarchingOutput))
-    rescale_fm = pipe.rescale_1.Execute(fastMarchingOutput)
-    utils.display_image(sitk.GetArrayFromImage(rescale_fm))
+    fastMarchingOutput = pipe.march.Execute(norm_1)
+    pipe.stats.Execute(fastMarchingOutput)
+    median = np.median(sitk.GetArrayFromImage(fastMarchingOutput))
 
-    #dist = pipe.signedmaurer.Execute(sitk.Cast(rescale_fm, sitk.sitkUInt32))
-    #utils.display_image(sitk.GetArrayFromImage(dist))
-    output = pipe.lsFilter.Execute(rescale_fm, inputImage)
+    if (abs(pipe.stats.GetMean() - median) > pipe.stats.GetSigma()):
+      print("may need to check your image data")
+    # six standard deviations should be good enough
+    peak_value = pipe.stats.GetMean() + pipe.stats.GetSigma() * 6.0
+    #print(pipe.stats.GetMean(), pipe.stats.GetMaximum(), pipe.stats.GetSigma())
+    thresh2 = pipe.thresh.Execute(fastMarchingOutput, 0.0, peak_value, peak_value)
+    
+    rescale_fm = pipe.rescale_speed.Execute(thresh2)
+    if (display_extra):
+      utils.display_image(sitk.GetArrayFromImage(rescale_fm))
 
-    #output = pipe.lsFilter.Execute(sitk.InvertIntensity(fastMarchingOutput), rescale_gray)
-    #utils.display_image(sitk.GetArrayFromImage(output))
+    output = pipe.lsFilter.Execute(rescale_fm, smoothingOutput)
+
+    # pipe.stats.Execute(output)
+    # median = np.median(sitk.GetArrayFromImage(output))
+    # if (abs(pipe.stats.GetMean() - median) > pipe.stats.GetSigma()):
+    #   print("may need to check your image data")
+    # # six standard deviations should be good enough
+    # peak_value = pipe.stats.GetMean() + pipe.stats.GetSigma() * 6.0
+    #print(pipe.stats.GetMean(), pipe.stats.GetMaximum(), pipe.stats.GetSigma())
+
+    rescale_ = sitk.Cast(pipe.rescaleUIint8.Execute(output), sitk.sitkUInt8) 
    
-    binary_out = pipe.binary_fill.Execute(sitk.Cast(output, sitk.sitkUInt8))
-    utils.display_image(sitk.GetArrayFromImage(binary_out))
+    binary_out = pipe.binary_fill.Execute(rescale_)
+
+    remove_stuff = pipe.binary_opening.Execute(binary_out)
+    if (display_extra):
+      utils.display_image(sitk.GetArrayFromImage(remove_stuff))
 
     pipe.erode.SetKernelRadius(2)
-    erode_im = pipe.erode.Execute(binary_out)
-
-    remove_stuff = pipe.binary_opening.Execute(erode_im)
-    utils.display_image(sitk.GetArrayFromImage(remove_stuff))
+    erode_im = pipe.erode.Execute(remove_stuff) #binary_out)
 
     pipe.dilate.SetKernelRadius(4)
-    dilate_im = pipe.dilate.Execute(remove_stuff)
+    dilate_im = pipe.dilate.Execute(erode_im)#remove_stuff)
 
-    utils.display_image(sitk.GetArrayFromImage(dilate_im))
+    mask = sitk.InvertIntensity(dilate_im) - 1
 
-    # test = sitk.BinaryNot(binary_out,
-    #                       foregroundValue = 0.0,
-    #                       backgroundValue = 1.0 )
-    # #utils.display_image(sitk.GetArrayFromImage(test))
+    masked_im = pipe.mask.Execute(sitk.Cast(inputImage, sitk.sitkUInt8), mask)
 
-    # test2 = pipe.cc.Execute(test)
-    # utils.display_image(sitk.GetArrayFromImage(test2))
-
-    # stats = pipe.stats.Execute(test2, test)
-
-    rescaleOutput = pipe.rescaleUIint8.Execute(dilate_im)
-
-    masked_im = pipe.mask_neg.Execute(inputImage,
-                                    sitk.Cast(dilate_im, sitk.sitkFloat64))
-    utils.display_image(sitk.GetArrayFromImage(masked_im))
+    #utils.display_image(sitk.GetArrayFromImage(masked_im))
 
     mask_name = case_file.split(".")[0] + "_mask_{0:04d}.nrrd".format(idx)
     mask_path = os.path.join(mask_dir_path, mask_name)
 
-    mask_name_list.append(mask_path)
+    mask_name_list.append(mask_name)
     mask_path_list.append(mask_path)
 
     pipe.writer.SetFileName(mask_path)
-    pipe.writer.Execute(masked_im)
+    pipe.writer.Execute(mask)
     
-    check_im = pipe.checkerboard.Execute( sitk.Cast(rescaleOutput, sitk.sitkFloat64),
-                                    inputImage,
-                                    (8,8)
-                                    )
+    check_im = pipe.checkerboard.Execute( sitk.Cast(mask, sitk.sitkFloat64),
+                                          inputImage,
+                                          (8,8)
+                                        )
+    # if (display_extra):
+    #   utils.display_images(sitk.GetArrayFromImage(dilate_im),
+    #                       sitk.GetArrayFromImage(masked_im),
+    #                       checkerboard=sitk.GetArrayFromImage(check_im),
+    #                       show=True)
 
-    utils.display_images(sitk.GetArrayFromImage(dilate_im),
-                        sitk.GetArrayFromImage(masked_im),
-                        checkerboard=sitk.GetArrayFromImage(check_im),
-                        show=True)
+    mask_fig = utils.display_images(sitk.GetArrayFromImage(mask),
+                                    sitk.GetArrayFromImage(masked_im),
+                                    checkerboard = sitk.GetArrayFromImage(check_im),
+                                    show = False
+                                   )
 
-
-    # mask_fig = utils.display_images(sitk.GetArrayFromImage(dilate_im),
-    #                     sitk.GetArrayFromImage(masked_im),
-    #                     checkerboard=sitk.GetArrayFromImage(check_im),
-    #                     show=False)
-    # fig_path = os.path.join(images_path, "fig_mask_{0}.png".format(idx))
-    # mask_fig.savefig(fig_path)
-    # plt.close(mask_fig)
-
+    fig_path = os.path.join(images_path, "fig_mask_{0}.png".format(idx))
+    mask_fig.savefig(fig_path)
+    plt.close(mask_fig)
 
   df["mask_path"] = mask_path_list
   df["mask_name"] = mask_name_list
 
   # add mask paths
   df.to_pickle(pickle_path)
- 
 
+  df.to_csv(csv_path)
+ 
 if __name__ == "__main__":
   main()
