@@ -27,7 +27,6 @@ from utils import get_mean_edges
 from utils import resample_rgb
 from stage_1_registration import stage_1_transform
 from stage_1_parallel import stage_1_parallel_metric
-from stage_1_parallel import stage_1_parallel_metric_flip
 from stage_1b_registration import stage_1b_transform
 from stage_2_registration import stage_2_transform
 from stage_3_registration import stage_3_transform
@@ -69,7 +68,7 @@ def main():
   # this is the registration loop
   reference_index = 0
   reg_n = {}
-  epsilon = 3
+  epsilon = 2
   lambda_ = 1.0
 
   # create a new graph
@@ -99,8 +98,6 @@ def main():
           t_pg_info = get_additional_info(t_r)
           G.add_node(j, row_data=t_r, page_data=t_pg_info)
 
-
-
         # this is the
         reg_key = (i, j)
         reg_n[reg_key] = dict(
@@ -111,18 +108,16 @@ def main():
         initial_params = stage_1_parallel_metric(
             reg_dict=reg_n[reg_key], n_max=512
         )
-        #print(initial_params)
+        # print(initial_params)
 
-        init_params_flip = stage_1_parallel_metric_flip(
-            reg_dict=reg_n[reg_key], n_max=512
-        )
         #print(initial_params)
         #print(init_params_flip)
-        print(initial_params["best_metric"], init_params_flip["best_metric"])
-        print(initial_params["best_angle"], init_params_flip["best_angle"])
+        print(initial_params["best_metric"], initial_params["best_angle"],
+              initial_params["best_metric_type"])
+        #print(init_params_flip["best_metric"], init_params_flip["best_angle"])
         # quit()
 
-        best_reg_s1 = stage_1_transform(
+        best_reg_s1, rigid_fig = stage_1_transform(
             reg_dict=reg_n[reg_key], n_max=512, init_params=initial_params
         )
         # print(
@@ -133,7 +128,12 @@ def main():
         best_reg_s1b, affine_fig = stage_1b_transform(
             reg_dict=reg_n[reg_key], n_max=1024, initial_transform=best_reg_s1
         )
-        
+
+        fig_name = os.path.join(image_dir, "fig_rigid_{0}_{1}.png".format(i,j))
+        fig_path = os.path.join(top_dir, fig_name)
+        rigid_fig.savefig(fig_path)
+        plt.close(rigid_fig)
+
         fig_name = os.path.join(image_dir, "fig_affine_{0}_{1}.png".format(i,j))
         fig_path = os.path.join(top_dir, fig_name)
         affine_fig.savefig(fig_path)
