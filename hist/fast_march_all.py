@@ -346,7 +346,12 @@ def main():
     pipe.dilate.SetKernelRadius(4)
     dilate_im = pipe.dilate.Execute(erode_im)#remove_stuff)
 
+    #utils.display_image(sitk.GetArrayFromImage(dilate_im))
+    # make 254 map to 1, and 0 map to 254
     mask = sitk.InvertIntensity(dilate_im) - 1
+    #utils.display_image(sitk.GetArrayFromImage(mask))
+    binarize = pipe.thresh.Execute(mask, 0, 0, 1)
+    #utils.display_image(sitk.GetArrayFromImage(binarize))
 
     masked_im = pipe.mask.Execute(sitk.Cast(inputImage, sitk.sitkUInt8), mask)
 
@@ -359,7 +364,7 @@ def main():
     mask_path_list.append(mask_path)
 
     pipe.writer.SetFileName(mask_path)
-    pipe.writer.Execute(mask)
+    pipe.writer.Execute(binarize)
     
     check_im = pipe.checkerboard.Execute( sitk.Cast(mask, sitk.sitkFloat64),
                                           inputImage,
@@ -371,7 +376,7 @@ def main():
     #                       checkerboard=sitk.GetArrayFromImage(check_im),
     #                       show=True)
 
-    mask_fig = utils.display_images(sitk.GetArrayFromImage(mask),
+    mask_fig = utils.display_images(sitk.GetArrayFromImage(binarize),
                                     sitk.GetArrayFromImage(masked_im),
                                     checkerboard = sitk.GetArrayFromImage(check_im),
                                     show = False
