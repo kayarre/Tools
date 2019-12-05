@@ -10,7 +10,7 @@ import itk
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-
+import copy
 
 # HAVE_NUMPY = True
 # try:
@@ -144,15 +144,15 @@ class PipeLine:
     self.dilate.BoundaryToForegroundOff()
     self.dilate.SetKernelType(sitk.sitkBall)
     self.dilate.SetKernelRadius(1)
-    self.dilate.SetForegroundValue(0)
-    self.dilate.SetBackgroundValue(1)
+    self.dilate.SetForegroundValue(1)
+    self.dilate.SetBackgroundValue(0)
 
     self.erode = sitk.BinaryErodeImageFilter()
     self.erode.BoundaryToForegroundOff()
     self.erode.SetKernelType(sitk.sitkBall)
     self.erode.SetKernelRadius(1)
-    self.erode.SetForegroundValue(0)
-    self.erode.SetBackgroundValue(1)
+    self.erode.SetForegroundValue(1)
+    self.erode.SetBackgroundValue(0)
 
     self.mask_neg = sitk.MaskNegatedImageFilter()
     #self.mask_neg = sitk.MaskImageFilter()
@@ -181,11 +181,13 @@ class PipeLine:
     self.cc = sitk.ConnectedComponentImageFilter()
     self.cc.FullyConnectedOff()
 
+    self.label_Stats = sitk.LabelIntensityStatisticsImageFilter()
+
     self.label_stats = sitk.LabelIntensityStatisticsImageFilter()
     self.stats = sitk.StatisticsImageFilter()
 
     self.binary_opening = sitk.BinaryOpeningByReconstructionImageFilter()
-    self.binary_opening.FullyConnectedOn()
+    self.binary_opening.FullyConnectedOff()
     self.binary_opening.SetKernelType(sitk.sitkBall)
     self.binary_opening.SetKernelRadius(16)
     self.binary_opening.SetBackgroundValue(1.0)
@@ -339,21 +341,50 @@ def main():
     remove_stuff = pipe.binary_opening.Execute(binary_out)
     if (display_extra):
       utils.display_image(sitk.GetArrayFromImage(remove_stuff))
+    
+    mask_init = sitk.InvertIntensity(remove_stuff) - 1
+    #utils.display_image(sitk.GetArrayFromImage(mask))
+    binarize = pipe.thresh.Execute(mask_init, 0, 0, 1)
+    #utils.display_image(sitk.GetArrayFromImage(binarize))
+    conn_comp = pipe.cc.Execute(binarize)
+    #print(pipe.cc.GetObjectCount())
+    #utils.display_image(sitk.GetArrayFromImage(conn_comp))
+    pipe.label_stats.Execute(conn_comp, binarize)
 
-    pipe.erode.SetKernelRadius(2)
-    erode_im = pipe.erode.Execute(remove_stuff) #binary_out)
+    sz_max = 0.0
+    label_max = 1
+    if ( pipe.cc.GetObjectCount() > 1):
+      for label in pipe.label_stats.GetLabels():
+        sz = pipe.label_stats.GetPhysicalSize(label)
+        if (sz > sz_max):
+          sz_max = copy.deepcopy(sz)
+          label_max = label
+      #print("did we ever get here?")
 
-    pipe.dilate.SetKernelRadius(4)
-    dilate_im = pipe.dilate.Execute(erode_im)#remove_stuff)
+    labelImage = sitk.Threshold(conn_comp, lower=label_max, upper=label_max)
+    rescale_li = pipe.rescale_1.Execute(labelImage)
+    #utils.display_image(sitk.GetArrayFromImage(labelImage))
+
+    # pipe.erode.SetKernelRadius(2)
+    # erode_im = pipe.erode.Execute(remove_stuff) #binary_out)
+
+    pipe.dilate.SetKernelRadius(1)
+    dilate_mask = pipe.dilate.Execute(rescale_li)#remove_stuff)
+  
+    close_im = sitk.BinaryMorphologicalClosing(dilate_mask,
+        int(4),
+        sitk.sitkBall,
+        1.0) 
+
 
     #utils.display_image(sitk.GetArrayFromImage(dilate_im))
     # make 254 map to 1, and 0 map to 254
-    mask = sitk.InvertIntensity(dilate_im) - 1
+    #mask = sitk.InvertIntensity(dilate_im) - 1
     #utils.display_image(sitk.GetArrayFromImage(mask))
-    binarize = pipe.thresh.Execute(mask, 0, 0, 1)
+    #binarize = pipe.thresh.Execute(mask, 0, 0, 1)
     #utils.display_image(sitk.GetArrayFromImage(binarize))
 
-    masked_im = pipe.mask.Execute(sitk.Cast(inputImage, sitk.sitkUInt8), mask)
+    masked_im = pipe.mask.Execute(sitk.Cast(inputImage, sitk.sitkUInt8), close_im)
 
     #utils.display_image(sitk.GetArrayFromImage(masked_im))
 
@@ -364,9 +395,9 @@ def main():
     mask_path_list.append(mask_path)
 
     pipe.writer.SetFileName(mask_path)
-    pipe.writer.Execute(binarize)
+    pipe.writer.Execute(close_im)
     
-    check_im = pipe.checkerboard.Execute( sitk.Cast(mask, sitk.sitkFloat64),
+    check_im = pipe.checkerboard.Execute( sitk.Cast(pipe.rescaleUIint8.Execute(close_im), sitk.sitkFloat64),
                                           inputImage,
                                           (8,8)
                                         )
@@ -376,7 +407,7 @@ def main():
     #                       checkerboard=sitk.GetArrayFromImage(check_im),
     #                       show=True)
 
-    mask_fig = utils.display_images(sitk.GetArrayFromImage(binarize),
+    mask_fig = utils.display_images(sitk.GetArrayFromImage(close_im),
                                     sitk.GetArrayFromImage(masked_im),
                                     checkerboard = sitk.GetArrayFromImage(check_im),
                                     show = False
