@@ -5,6 +5,7 @@ import tifffile as tiff
 import SimpleITK as sitk
 import os
 import copy
+import matplotlib.pyplot as plt
 #import itk
 
 # from ipywidgets import interact, fixed

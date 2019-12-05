@@ -126,7 +126,7 @@ def resample_rgb(in_transform, f_sitk, t_sitk, mean=0):
   compose_new = sitk.ComposeImageFilter()
   new_image = compose_new.Execute(t_resampled, t_resampled1, t_resampled2)
 
-  return new_image
+  return sitk.Cast(new_image, sitk.sitkVectorUInt8)
 
 
 def get_mean_edges(itk_image):

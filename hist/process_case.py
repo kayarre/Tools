@@ -7,6 +7,7 @@ import pandas as pd
 import SimpleITK as sitk
 import networkx as nx
 import pickle
+import copy
 
 # import itk
 import matplotlib.pyplot as plt
@@ -55,6 +56,7 @@ def main():
   #out_dir = "vwi_proc"
   trans_dir = "vwi_trans"
   image_dir = "images"
+  test_dir = "test"
   resample_dir = "resample"
   #mask_dir = "masks"
   #print(df.head())
@@ -71,9 +73,14 @@ def main():
   epsilon = 2
   lambda_ = 1.0
 
+  bad_keys = {} #{(10,11) : 4.85965114, (11,10) :]
+
   # create a new graph
   G = nx.DiGraph()
   n_rows = len(df.index)
+  init_max = 256
+  stage_1_max = 512
+  elstix_max = 1024
 
   for i in range(n_rows):
 
@@ -100,14 +107,26 @@ def main():
 
         # this is the
         reg_key = (i, j)
+
         reg_n[reg_key] = dict(
             f_row=f_r, t_row=t_r, f_page=f_pg_info, t_page=t_pg_info
         )
         print(reg_key)
+        if (reg_key not in [(23,21)]):
+          continue
 
-        initial_params = stage_1_parallel_metric(
-            reg_dict=reg_n[reg_key], n_max=512
+        initial_params, fig_list = stage_1_parallel_metric(
+            reg_dict=reg_n[reg_key], n_max=init_max
         )
+        print(initial_params)
+        max_pix = copy.deepcopy(init_max)
+        for fig_dict in fig_list:
+          for key, fig in fig_dict.items():
+            fig_name = os.path.join(test_dir, "fig_init_{0}_{1}_{2}_{3}.png".format(i, j, key, int(max_pix)))
+            fig_path = os.path.join(top_dir, fig_name)
+            fig.savefig(fig_path)
+            plt.close(fig)
+          max_pix /=2
         # print(initial_params)
 
         #print(initial_params)
@@ -116,9 +135,10 @@ def main():
               initial_params["best_metric_type"])
         #print(init_params_flip["best_metric"], init_params_flip["best_angle"])
         # quit()
-
+        if (reg_key in bad_keys.keys()):
+          initial_params["best_angle"] = bad_keys[reg_key]
         best_reg_s1, rigid_fig = stage_1_transform(
-            reg_dict=reg_n[reg_key], n_max=512, init_params=initial_params
+            reg_dict=reg_n[reg_key], n_max=stage_1_max, init_params=initial_params
         )
         # print(
         #     best_reg_s1["transform"].GetParameters(),
@@ -126,7 +146,7 @@ def main():
         # )
 
         best_reg_s1b, affine_fig = stage_1b_transform(
-            reg_dict=reg_n[reg_key], n_max=1024, initial_transform=best_reg_s1
+            reg_dict=reg_n[reg_key], n_max=elstix_max, initial_transform=best_reg_s1
         )
 
         fig_name = os.path.join(image_dir, "fig_rigid_{0}_{1}.png".format(i,j))

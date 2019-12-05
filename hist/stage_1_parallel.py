@@ -12,6 +12,7 @@ logging.basicConfig(level=logging.WARNING)
 #logging.basicConfig(level=logging.DEBUG)
 
 import utils #import get_sitk_image, display_images
+from fast_march_all import PipeLine
 
 # This function evaluates the metric value in a thread safe manner
 def evaluate_metric(current_rotation, tx, f_image, m_image,
@@ -63,8 +64,10 @@ def evaluate_metric(current_rotation, tx, f_image, m_image,
 # don't know if this makes sense
 def evaluate_metric_extra(current_page,
                           f_image, f_mask,
-                          m_image, m_mask, angles):
+                          m_image, m_mask, angles,
+                          n_max):
   page_idx = current_page["index"]
+  size_x = current_page["size_x"]
   spacing = ( current_page["mmp_x"], current_page["mmp_y"] )
   # transform numpy array to simpleITK image
   # have set the parameters manually
@@ -89,35 +92,70 @@ def evaluate_metric_extra(current_page,
   #cnt_pixels = np.count_nonzero(sitk.GetArrayViewFromImage(mask_resampled))
   n_bins = int(np.cbrt(np.prod(sitk.GetArrayViewFromImage(t_mask_resampled).shape)))
 
-  f_input = sitk.Cast(f_sitk*f_mask_resampled, sitk.sitkFloat32)
-  t_input = sitk.Cast(t_sitk*t_mask_resampled, sitk.sitkFloat32)
+  # f_input = sitk.Cast(f_sitk*f_mask_resampled, sitk.sitkFloat32)
+  # t_input = sitk.Cast(t_sitk*t_mask_resampled, sitk.sitkFloat32)
+  f_input = sitk.Cast(f_mask_resampled, sitk.sitkFloat32)
+  t_input = sitk.Cast(t_mask_resampled, sitk.sitkFloat32)
+  pipe = PipeLine()
+  #time_step = 0.9 * pipe.smooth.EstimateOptimalTimeStep(f_input) 
+  #pipe.smooth.SetTimeStep(time_step)
+  #f_smooth = pipe.smooth.Execute(f_input)
+  #pipe.gauss.SetSigma(max([4, size_x/6]))
+
+  f_rescale = pipe.gauss.Execute(f_input)
+
+  #t_smooth = pipe.smooth.Execute(t_input)
+  t_rescale = pipe.gauss.Execute(t_input)
+
+  #f_rescale = pipe.rescaleUIint8.Execute(f_gauss)
+  #t_rescale = pipe.rescaleUIint8.Execute(t_gauss)
+
   # im_mask_t = sitk.ReadImage(m_mask)
   # #print(im_mask_t)
 
   # t_mask_resampled = sitk.Resample(im_mask_t, t_sitk,
   #                                   identity, sitk.sitkNearestNeighbor,
   #                                   0.0, im_mask_t.GetPixelID())
-  initial_transform = sitk.CenteredTransformInitializer(f_input, 
-                                                  t_input, 
+  initial_transform = sitk.CenteredTransformInitializer(f_rescale, 
+                                                  t_rescale, 
                                                   sitk.Euler2DTransform(), 
                                                   sitk.CenteredTransformInitializerFilter.MOMENTS)
-
+  current_transform = sitk.Euler2DTransform(initial_transform)  
   res_dict = {}
-  
+  fig_test = {}
+  #This is the best for mask registration
+  metric_types = ["mse"] #["mmi", "ants", "mse"]
   all_values = {}
   with ThreadPool(len(angles)) as pool:
-    for m_type in ["mmi", "ants", "mse"]:
+    for m_type in metric_types:
       all_values[m_type] = pool.map(partial(evaluate_metric, 
                                             tx = initial_transform, 
-                                            f_image = f_input,
-                                            m_image = t_input,
+                                            f_image = f_rescale,
+                                            m_image = t_rescale,
                                             metric = m_type,
                                             n_bins = n_bins),
                                     angles)
-  for m_type in ["mmi", "ants", "mse"]:
+    
+  for m_type in metric_types:
     res_dict[m_type] = dict(angle = angles[np.argmin(all_values[m_type])],
-                            metric = np.min(all_values[m_type])
+                            metric = np.min(all_values[m_type]) #* ( n_max  / size_x)
                             )
+    
+    current_transform.SetAngle(res_dict[m_type]["angle"])
+    t_resampled = sitk.Resample(t_rescale, f_rescale,
+                                    current_transform, sitk.sitkLinear,
+                                    0.0, t_rescale.GetPixelID()
+                                )
+    checkerboard = sitk.CheckerBoardImageFilter()
+    check_im = checkerboard.Execute(f_rescale, t_resampled, (8,8))
+
+    fig_test[m_type] =  utils.display_images(
+        fixed_npa=sitk.GetArrayViewFromImage(f_rescale),
+        moving_npa=sitk.GetArrayViewFromImage(t_resampled),
+        checkerboard=sitk.GetArrayViewFromImage(check_im),
+        show=False
+    )
+
   # this leaks if you don't close it
   #p.close()
   # p = ThreadPool(len(angles))
@@ -135,7 +173,8 @@ def evaluate_metric_extra(current_page,
                               size_y = current_page["size_y"],
                               all = res_dict)
 
-  return param_test
+
+  return param_test, fig_test
 
 # n_max is the maxmimum picture size for registration
 def stage_1_parallel_metric(reg_dict, n_max, count=0):
@@ -158,14 +197,28 @@ def stage_1_parallel_metric(reg_dict, n_max, count=0):
 
   # print("tst")
   #dr = 2.0*np.pi / (64.0 * len(page_list))
-  with ThreadPool(len(page_list)) as p_page:
-    list_dicts = p_page.map(partial(evaluate_metric_extra, 
-                                    f_image = ff_path,
-                                    f_mask = ff_mask_path,
-                                    m_image = tf_path,
-                                    m_mask = tf_mask_path,
-                                    angles = n_angles),
-                            page_list)
+  list_dicts = []
+  fig_list = []
+  for p in page_list:
+    res_ = evaluate_metric_extra(
+                                  current_page = p,
+                                  f_image = ff_path,
+                                  f_mask = ff_mask_path,
+                                  m_image = tf_path,
+                                  m_mask = tf_mask_path,
+                                  angles = n_angles,
+                                  n_max = n_max )
+
+    list_dicts.append(res_[0])
+    fig_list.append(res_[1])
+  # with ThreadPool(len(page_list)) as p_page:
+  #   list_dicts = p_page.map(partial(evaluate_metric_extra, 
+  #                                   f_image = ff_path,
+  #                                   f_mask = ff_mask_path,
+  #                                   m_image = tf_path,
+  #                                   m_mask = tf_mask_path,
+  #                                   angles = n_angles),
+  #                           page_list)
   # this leaks if you don't close it
   #p_page.close()
   # print("tst")
@@ -186,4 +239,4 @@ def stage_1_parallel_metric(reg_dict, n_max, count=0):
   result["best_page_idx"] = idx
   result["best_metric_type"] = keep["metric_type"]
 
-  return result
+  return result, fig_list
