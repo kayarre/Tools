@@ -97,15 +97,15 @@ def evaluate_metric_extra(current_page,
   f_input = sitk.Cast(f_mask_resampled, sitk.sitkFloat32)
   t_input = sitk.Cast(t_mask_resampled, sitk.sitkFloat32)
   pipe = PipeLine()
-  #time_step = 0.9 * pipe.smooth.EstimateOptimalTimeStep(f_input) 
-  #pipe.smooth.SetTimeStep(time_step)
-  #f_smooth = pipe.smooth.Execute(f_input)
+  time_step = 0.9 * pipe.smooth.EstimateOptimalTimeStep(f_input) 
+  pipe.smooth.SetTimeStep(time_step)
+  f_smooth = pipe.smooth.Execute(f_input)
   #pipe.gauss.SetSigma(max([4, size_x/6]))
 
-  f_rescale = pipe.gauss.Execute(f_input)
+  f_rescale = pipe.gauss.Execute(f_smooth)
 
-  #t_smooth = pipe.smooth.Execute(t_input)
-  t_rescale = pipe.gauss.Execute(t_input)
+  t_smooth = pipe.smooth.Execute(t_input)
+  t_rescale = pipe.gauss.Execute(t_smooth)
 
   #f_rescale = pipe.rescaleUIint8.Execute(f_gauss)
   #t_rescale = pipe.rescaleUIint8.Execute(t_gauss)

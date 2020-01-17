@@ -81,6 +81,7 @@ def stage_1_transform(reg_dict, n_max, init_params, count=0):
   best_reg = {}
   # this is where we could put a loop to iterate over the rotation angle
   rot = sitk.Euler2DTransform(initial_transform)
+  #rot = sitk.Euler2DTransform() #f_input.GetDimension())
   #print(rot)
   #quit()
   #rot.SetCenter(center)
@@ -93,16 +94,53 @@ def stage_1_transform(reg_dict, n_max, init_params, count=0):
   n_bins = int(np.cbrt(np.prod(sitk.GetArrayViewFromImage(f_mask_resampled).shape)))
   # Similarity metric settings.
   reg_method.SetMetricAsMattesMutualInformation(numberOfHistogramBins=n_bins)
+  #reg_method.SetMetricAsMeanSquares()
   #reg_method.SetMetricAsANTSNeighborhoodCorrelation(radius=4)
   reg_method.SetMetricSamplingStrategy(reg_method.RANDOM) #REGULAR
   reg_method.SetMetricSamplingPercentage(0.2)
   reg_method.SetInterpolator(sitk.sitkLinear)
 
   # Optimizer settings.
-  reg_method.SetOptimizerAsGradientDescent(learningRate=0.8,
-                                          numberOfIterations=1000,
-                                          convergenceMinimumValue=1e-10,
-                                          convergenceWindowSize=20)
+  # reg_method.SetOptimizerAsGradientDescent(learningRate=0.8,
+  #                                           numberOfIterations=1000,
+  #                                           convergenceMinimumValue=1e-10,
+  #                                           convergenceWindowSize=20,
+  #                                           estimateLearningRate = reg_method.EachIteration
+  #                                         )
+  reg_method.SetOptimizerAsGradientDescentLineSearch(learningRate=0.8,
+                                                      numberOfIterations=1000,
+                                                      convergenceMinimumValue = 1e-6,
+                                                      convergenceWindowSize = 20,
+                                                      lineSearchLowerLimit = 0,
+                                                      lineSearchUpperLimit = 5.0,
+                                                      lineSearchEpsilon = 0.01,
+                                                      lineSearchMaximumIterations = 20,
+                                                      estimateLearningRate = reg_method.Once,
+                                                      maximumStepSizeInPhysicalUnits = 0.0
+                                                    )
+  # reg_method.SetOptimizerAsLBFGS2(solutionAccuracy = 1e-5,
+  #                                 numberOfIterations = 0,
+  #                                 hessianApproximateAccuracy = 6,
+  #                                 deltaConvergenceDistance = 0,
+  #                                 deltaConvergenceTolerance = 1e-5,
+  #                                 lineSearchMaximumEvaluations = 40,
+  #                                 lineSearchMinimumStep = 1e-20,
+  #                                 lineSearchMaximumStep = 1e20,
+  #                                 lineSearchAccuracy = 1e-4
+  #                                 )
+
+  # reg_method.SetOptimizerAsConjugateGradientLineSearch( learningRate=0.8,
+  #                                                       numberOfIterations=1000,
+  #                                                       convergenceMinimumValue = 1e-6,
+  #                                                       convergenceWindowSize = 20,
+  #                                                       lineSearchLowerLimit = 0,
+  #                                                       lineSearchUpperLimit = 5.0,
+  #                                                       lineSearchEpsilon = 0.01,
+  #                                                       lineSearchMaximumIterations = 20,
+  #                                                       estimateLearningRate = reg_method.Once,
+  #                                                       maximumStepSizeInPhysicalUnits = 0.0 )
+
+
   reg_method.SetOptimizerScalesFromPhysicalShift()
 
   # Setup for the multi-resolution framework.            
@@ -118,13 +156,15 @@ def stage_1_transform(reg_dict, n_max, init_params, count=0):
   #reg_method.SetSmoothingSigmasPerLevel(smoothingSigmas = [0.0, 1.0, 1.0, 2.0, 2.0, 4.0, 4.0, 6.0])
   reg_method.SetSmoothingSigmasPerLevel(smoothingSigmas = [0.0, 0.5, 0.5, 1.0, 1.0, 2.0, 2.0, 4.0])
   #reg_method.SetSmoothingSigmasPerLevel(smoothingSigmas = [1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0])
-  reg_method.SmoothingSigmasAreSpecifiedInPhysicalUnitsOn()
+  #reg_method.SmoothingSigmasAreSpecifiedInPhysicalUnitsOn()
+  #reg_method.SetMovingInitialTransform(initial_transform)
 
   # Connect all of the observers so that we can perform plotting during registration.
   # reg_method.AddCommand(sitk.sitkStartEvent, utils.start_plot)
   # reg_method.AddCommand(sitk.sitkEndEvent, lambda: utils.end_plot(angle))
   # reg_method.AddCommand(sitk.sitkMultiResolutionIterationEvent, utils.update_multires_iterations) 
   # reg_method.AddCommand(sitk.sitkIterationEvent, lambda: utils.plot_values(reg_method))
+
 
   min_metric = 9999999.0
   for angle in n_angles:
@@ -143,6 +183,8 @@ def stage_1_transform(reg_dict, n_max, init_params, count=0):
         continue
       exception = False
 
+    #composite_transform = sitk.Transform(final_transform)
+    #composite_transform.AddTransform(initial_transform)
 
     measure = reg_method.GetMetricValue()
     if ( measure < min_metric):
@@ -154,6 +196,20 @@ def stage_1_transform(reg_dict, n_max, init_params, count=0):
                       tiff_page = page # this contains the page from the tiff file
                       )
     print(measure, reg_method.GetOptimizerStopConditionDescription())
+
+
+
+    #composite_transform = sitk.Transform(f_input.GetDimension(), sitk.sitkEuler)
+    # final_transform.FlattenTransform()
+    # composite_transform.AddTransform(final_transform)
+    # print("final")
+    # print(final_transform)
+    # print("init")
+    # print(initial_transform)
+    # print("composite")
+    # composite_transform.FlattenTransform()
+    # print(composite_transform)
+    # quit()
     # t_resampled = sitk.Resample(t_sitk, f_sitk,
     #                              final_transform, sitk.sitkLinear,
     #                              0.0, t_sitk.GetPixelID())
@@ -170,9 +226,9 @@ def stage_1_transform(reg_dict, n_max, init_params, count=0):
   #2,(reg_dict["f_page"][0]["scale_x"], reg_dict["f_page"][0]["scale_y"]))
   print('Final metric value: {0}'.format(best_reg["measure"]))
   print('Optimizer\'s stopping condition, {0}'.format(best_reg["stop_cond"]))
-
+  best_reg["transform"].FlattenTransform()
   moving_resampled = sitk.Resample(t_sitk, f_sitk,
-                                   best_reg["transform"], sitk.sitkLinear,
+                                   best_reg["transform"], sitk.sitkEuler,
                                    0.0, t_sitk.GetPixelID())
 
   checkerboard = sitk.CheckerBoardImageFilter()

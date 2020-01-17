@@ -29,6 +29,7 @@ from utils import resample_rgb
 from stage_1_registration import stage_1_transform
 from stage_1_parallel import stage_1_parallel_metric
 from stage_1b_registration import stage_1b_transform
+from stage_1c_registration import stage_1c_transform
 from stage_2_registration import stage_2_transform
 from stage_3_registration import stage_3_transform
 
@@ -73,7 +74,7 @@ def main():
   epsilon = 2
   lambda_ = 1.0
 
-  bad_keys = {} #{(10,11) : 4.85965114, (11,10) :]
+  bad_keys = {(23,21) : 1.030835089459151, (10,11) : 4.908738521234052 } #, (11,10) :]
 
   # create a new graph
   G = nx.DiGraph()
@@ -112,13 +113,13 @@ def main():
             f_row=f_r, t_row=t_r, f_page=f_pg_info, t_page=t_pg_info
         )
         print(reg_key)
-        if (reg_key not in [(23,21)]):
-          continue
+        # if (reg_key not in [(10,11), (23,21)]):
+        #   continue
 
         initial_params, fig_list = stage_1_parallel_metric(
             reg_dict=reg_n[reg_key], n_max=init_max
         )
-        print(initial_params)
+        #print(initial_params)
         max_pix = copy.deepcopy(init_max)
         for fig_dict in fig_list:
           for key, fig in fig_dict.items():
@@ -141,13 +142,22 @@ def main():
             reg_dict=reg_n[reg_key], n_max=stage_1_max, init_params=initial_params
         )
         # print(
-        #     best_reg_s1["transform"].GetParameters(),
-        #     best_reg_s1["transform"].GetFixedParameters(),
+        #     best_reg_s1["transform"]
         # )
-
         best_reg_s1b, affine_fig = stage_1b_transform(
             reg_dict=reg_n[reg_key], n_max=elstix_max, initial_transform=best_reg_s1
         )
+        # print(
+        #     best_reg_s1b["transform"]
+        # )
+        # if (reg_key in bad_keys.keys()):
+        #   best_reg_s1b, affine_fig = stage_1b_transform(
+        #       reg_dict=reg_n[reg_key], n_max=elstix_max, initial_transform=best_reg_s1
+        #   )
+        # else:
+        #   best_reg_s1b, affine_fig = stage_1c_transform(
+        #       reg_dict=reg_n[reg_key], n_max=elstix_max, initial_transform=best_reg_s1
+        #   )
 
         fig_name = os.path.join(image_dir, "fig_rigid_{0}_{1}.png".format(i,j))
         fig_path = os.path.join(top_dir, fig_name)
@@ -161,15 +171,15 @@ def main():
 
         affine_name = os.path.join(trans_dir, "affine_{0}_{1}.h5".format(i,j))
         transform_path = os.path.join(top_dir, affine_name)
-        sitk.WriteTransform(best_reg_s1b["transform"], transform_path)
+        sitk.WriteTransform(best_reg_s1["transform"], transform_path)
 
         abs_ij = abs(i-j)
         # this is the metric from the possum framework
         weight = (1.0 + best_reg_s1b["measure"]) * abs_ij * (1.0 + lambda_)**(abs_ij) 
         G.add_edge(i, j, weight = weight,
-                  measure = best_reg_s1b["measure"],
-                  transform = best_reg_s1b["transform"],
-                  tiff_page = best_reg_s1b["tiff_page"],
+                  measure = best_reg_s1["measure"],
+                  transform = best_reg_s1["transform"],
+                  tiff_page = best_reg_s1["tiff_page"],
                   transform_file_name = affine_name )
 
     
@@ -212,18 +222,18 @@ def main():
     trans_list = _calculate_composite(G, reference_index, j)
     # Instanciate composite transform which will handle all the partial
     # transformations.
-    composite_transform = sitk.Transform()
+    composite_transform = sitk.Transform(2, sitk.sitkEuler )
     # Fill the composite transformation with the partial transformations:
     for transform in trans_list:
         composite_transform.AddTransform(transform)
 
     reg_key = (reference_index, j)
     if (reg_key in reg_n.keys()):
-      f_sitk, t_sitk = read_tiff_image(reg_n[reg_key], page_index=4)
+      f_sitk, t_sitk = read_tiff_image(reg_n[reg_key], page_index = 4)
       new_image = resample_rgb(composite_transform,
                                f_sitk,
                                t_sitk,
-                               mean=get_mean_edges(t_sitk)
+                               mean = get_mean_edges(t_sitk)
                               )
       resample_image =  os.path.join(top_dir, resample_dir, "resample_affine_{0}.png".format(j))
       writer = sitk.ImageFileWriter()

@@ -181,7 +181,6 @@ class PipeLine:
     self.cc = sitk.ConnectedComponentImageFilter()
     self.cc.FullyConnectedOff()
 
-    self.label_Stats = sitk.LabelIntensityStatisticsImageFilter()
 
     self.label_stats = sitk.LabelIntensityStatisticsImageFilter()
     self.stats = sitk.StatisticsImageFilter()
@@ -395,7 +394,7 @@ def main():
     mask_path_list.append(mask_path)
 
     pipe.writer.SetFileName(mask_path)
-    pipe.writer.Execute(close_im)
+    pipe.writer.Execute(sitk.Cast(close_im, sitk.sitkUInt8))
     
     check_im = pipe.checkerboard.Execute( sitk.Cast(pipe.rescaleUIint8.Execute(close_im), sitk.sitkFloat64),
                                           inputImage,
