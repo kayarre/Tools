@@ -63,6 +63,7 @@ def main():
 
   G = G_read.copy()
   for n1, n2, d in G.edges(data=True):
+    #print(n1,n2)
     # print(d["transform_file_name"])
     transform_path = os.path.join(top_dir, d["transform_file_name"])
     trans_ = sitk.ReadTransform(transform_path)
@@ -78,8 +79,8 @@ def main():
     print(j)
     data = df.iloc[j]
     # j is the moving image
-    trans_list = utils._calculate_composite(G, reference_index, j)
-    #print(trans_list)
+    trans_list, trans_chain = utils._calculate_composite(G, reference_index, j)
+    print(trans_chain)
     # Instantiate composite transform which will handle all the partial
     # transformations.
     composite_transform = sitk.Transform(2, sitk.sitkEuler)
@@ -105,9 +106,9 @@ def main():
     #         composite_transform.GetParameters(), composite_transform.GetName())
 
     reg_key = (reference_index, j)
-    test_chain = utils._get_transformation_chain(G, reference_index, j)
-    print(reg_key)
-    print(test_chain[0])
+    #test_chain = utils._get_transformation_chain(G, reference_index, j)
+    print("reg key", reg_key)
+    #print(test_chain)
     if (reg_key in [ref_key]):
       # need hack to get a registration with the reference image in it
       # if this doesn't work then you have big problems
@@ -115,10 +116,10 @@ def main():
         if (reg_key[0] == key[0] ):
           base_key = key
           break
-
+      print("base key", base_key)
       f_sitk = utils.read_1_tiff_image(reg_n[base_key], page_index = 5)
       #print(f_sitk.GetSize())
-      new_image = utils.resample_1_rgb(composite_transform.GetInverse(),
+      new_image = utils.resample_1_rgb(composite_transform,
                                        f_sitk,
                                        mean = utils.get_mean_edges(f_sitk) )
       resample_im = "resample_affine_{0}.png".format(j)
@@ -130,27 +131,32 @@ def main():
 
     else:
       #key_test = tuple(reversed(test_chain[0]))
-      key_test = tuple(test_chain[0])
-      print(key_test)
-      t_sitk = utils.read_1_tiff_image(reg_n[key_test], page_index = 5)
+      #key_test = tuple(test_chain[0])
+      key_test = tuple(trans_chain[-1])
+      print("the moving image", key_test)
+
+      #f_sitk = utils.read_1_tiff_image(reg_n[key_test], page_index = 5)
+      t_sitk = utils.read_1_tiff_image_moving(reg_n[key_test], page_index = 5)
+      #print(reg_n[key_test])
       #print(t_sitk.GetSize())
-      print(t_sitk)
-      print(composite_transform)
-      quit()
-      new_image = utils.resample_1_rgb(composite_transform.GetInverse(),
+      #print(t_sitk)
+      #print(composite_transform)
+      #quit()
+      new_image = utils.resample_1_rgb(composite_transform,
                                t_sitk,
                                mean = utils.get_mean_edges(t_sitk)
                               )
 
-      #checkerboard = sitk.CheckerBoardImageFilter()
-      #check_im = checkerboard.Execute(f_sitk, new_image, (8,8))
+      checkerboard = sitk.CheckerBoardImageFilter()
+      check_im = checkerboard.Execute(old_reg_image, new_image, (8,8))
 
-      # utils.display_images(
-      #     fixed_npa=sitk.GetArrayViewFromImage(f_sitk),
-      #     moving_npa=sitk.GetArrayViewFromImage(new_image),
-      #     checkerboard=sitk.GetArrayViewFromImage(check_im),
-      #     show=True
-      # )
+      utils.display_images(
+          fixed_npa=sitk.GetArrayViewFromImage(old_reg_image),
+          moving_npa=sitk.GetArrayViewFromImage(new_image),
+          checkerboard=sitk.GetArrayViewFromImage(check_im),
+          show=True
+      )
+
       #print(new_image)
 
       #test_im = sitk.Image([10,10], sitk.sitkVectorUInt8, 3)
@@ -169,6 +175,17 @@ def main():
       writer.SetFileName(resample_path)
       writer.Execute(t_sitk)
 
+    #old_reg_image = new_image
+    #print(old_reg_image.GetSize())
+    #if (j > 0):
+    img_arr = sitk.GetArrayFromImage(new_image)
+    img_out = sitk.GetImageFromArray(img_arr)
+    print(img_arr.shape)
+    print(img_out.GetSize())
+    print(dir(new_image))
+    img_out.CopyInformation(new_image)
+    # should I delete old_reg_image?
+    old_reg_image = sitk.Image(img_out)
 
 if __name__ == "__main__":
   main()

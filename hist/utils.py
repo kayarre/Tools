@@ -79,6 +79,23 @@ def read_1_tiff_image(reg_dict, page_index=0):
 
   return f_sitk
 
+def read_1_tiff_image_moving(reg_dict, page_index=0):
+  ff_path = reg_dict["t_row"]["color_paths"]
+
+  for page in reg_dict["f_page"]:
+      if page["index"] != page_index:
+          continue
+      break
+  page_idx = page["index"]
+
+  spacing = (page["mmp_x"], page["mmp_y"])
+  #print(spacing)
+  # transform numpy array to simpleITK image
+  # have set the parameters manually
+  im_f = tiff.imread(ff_path, key=page_idx)
+  f_sitk = get_sitk_image(im_f[:, :, :3], spacing=spacing, vector=True)
+
+  return f_sitk
 
 def _calculate_composite(G, reference_index, moving_slice_index):
   """
@@ -101,7 +118,7 @@ def _calculate_composite(G, reference_index, moving_slice_index):
       data = G.get_edge_data(m_slice, r_slice)
       partial_transformations.append(data["transform"])
 
-  return partial_transformations
+  return partial_transformations, transformation_chain
 
 def _get_transformation_chain(G, reference_index, moving_index):
   i = moving_index
@@ -116,8 +133,8 @@ def _get_transformation_chain(G, reference_index, moving_index):
   #print(dict(slice_paths))
   #print(dict(slice_paths)[r])
   #print(list(reversed(dict(slice_paths)[r][i])))
-  path = list(reversed(dict(slice_paths)[r][i]))
-  #print(path)
+  path = list(dict(slice_paths)[r][i])
+  print(path)
   chain = []
 
   # In case we hit a reference slice :)
@@ -125,9 +142,10 @@ def _get_transformation_chain(G, reference_index, moving_index):
     chain.append((r, r))
   # For all the other cases collect partial transforms.
   for step in range(len(path) - 1):
-    chain.append((path[step + 1], path[step ]))
+    chain.append((path[step], path[step+1]))
   #print(chain)
-  return chain
+  
+  return list(reversed(chain))
 
 def resample_rgb(in_transform, f_sitk, t_sitk, mean=0):
   filter_ = sitk.ResampleImageFilter()
