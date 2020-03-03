@@ -27,19 +27,8 @@ def uniform_grid(bounds, dims):
   #   z[..., i] = base * 0.25 * i
   return x, y, z
 
-def reshape_pts(x,y,z):
-  # The actual points.
-  pts = np.empty(z.shape + (3,), dtype=float)
-  pts[..., 0] = x
-  pts[..., 1] = y
-  pts[..., 2] = z
-  # We reorder the points, scalars and vectors so this is as per VTK's
-  # requirement of x first, y next and z last.
-  pts = pts.transpose(2, 1, 0, 3).copy()
-  pts.shape = pts.size # 3, 3
-  return pts
 
-def reshape_pts_2(x,y,z):
+def reshape_pts(x,y,z):
   # The actual points.
   pts = np.empty(z.shape + (3,), dtype=float)
   pts[..., 0] = x
@@ -63,22 +52,6 @@ def gen_data(x,y,z):
   scalars = scalars.T.copy()
 
   vectors = vectors.transpose(2, 1, 0, 3).copy()
-  vectors.shape = vectors.size # 3, 3
-
-  return scalars, vectors
-
-def gen_data_2(x,y,z):
-  # Simple scalars.
-  scalars = x * x + y * y + z * z
-  # Some vectors
-  vectors = np.empty(z.shape + (3,), dtype=float)
-  vectors[..., 0] = (4 - y * 2)
-  vectors[..., 1] = (x * 3 - 12)
-  vectors[..., 2] = np.sin(z * np.pi)
-
-  scalars = scalars.T.copy()
-
-  vectors = vectors.transpose(2, 1, 0, 3).copy()
   vectors.shape = vectors.size // 3, 3
 
   return scalars, vectors
@@ -86,9 +59,9 @@ def gen_data_2(x,y,z):
 
 def test_uniform_grid(bounds, dims):
   x,y,z = uniform_grid(bounds, dims)
-  pts = reshape_pts_2(x,y,z)
+  pts = reshape_pts(x,y,z)
   #print(pts.shape)
-  scalars, vectors = gen_data_2(x,y,z)
+  scalars, vectors = gen_data(x,y,z)
   #print(pts.shape, scalars.shape, vectors.shape)
   vtk_pts = vtk.vtkPoints()
   for pt in pts:
@@ -416,12 +389,12 @@ def test_sphere_in_box():
   writer.Write()
 
 def main():
-  n, m, coeff = read_file()
-  print(n[0], m[0], coeff[0])
-  r, T, P = gen_surface(n, m, coeff)
-  print(r.shape)#, T, P)
+  # n, m, coeff = read_file()
+  # print(n[0], m[0], coeff[0])
+  # r, T, P = gen_surface(n, m, coeff)
+  # print(r.shape)#, T, P)
 
-  #test_sphere_in_box()
+  test_sphere_in_box()
   
 
 if __name__ == '__main__':
