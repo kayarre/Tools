@@ -198,15 +198,15 @@ class Sphere(object):
     numPolys = self.phiResolution * 2 * localThetaIndx
 
     newPoints = vtk.vtkPoints()
-    newPoints.Allocate(numPts);
+    newPoints.Allocate(numPts)
 
     newPolys = vtk.vtkCellArray()
     #newPolys.AllocateEstimate(numPolys, 3)
     
     newNormals = vtk.vtkDoubleArray()
-    newNormals.SetNumberOfComponents(3);
-    newNormals.Allocate(3 * numPts);
-    newNormals.SetName("Normals");
+    newNormals.SetNumberOfComponents(3)
+    newNormals.Allocate(3 * numPts)
+    newNormals.SetName("Normals")
 
     # Create sphere
     # Create north pole if needed
@@ -220,7 +220,7 @@ class Sphere(object):
       x[0] = 0.0
       x[1] = 0.0
       x[2] = 1.0
-      newNormals.InsertTuple(numPoles, x);
+      newNormals.InsertTuple(numPoles, x)
       numPoles += 1
 
     # Create south pole if needed
@@ -243,7 +243,7 @@ class Sphere(object):
     startTheta *= vtk.vtkMath.Pi() / 180.0
     
     endTheta = (localEndTheta if localEndTheta > localStartTheta else localStartTheta)
-    endTheta *= vtk.vtkMath.Pi() / 180.0;
+    endTheta *= vtk.vtkMath.Pi() / 180.0
 
     startPhi = (self.startPhi if self.startPhi < self.endPhi else self.endPhi)
     startPhi *= vtk.vtkMath.Pi() / 180.0
@@ -263,10 +263,10 @@ class Sphere(object):
 
     # Create intermediate points
     for i in range(localThetaResolution):
-      theta = localStartTheta * vtk.vtkMath.Pi() / 180.0 + i * deltaTheta;
+      theta = localStartTheta * vtk.vtkMath.Pi() / 180.0 + i * deltaTheta
 
       for j in range(jStart, jEnd):
-        phi = startPhi + j * deltaPhi;
+        phi = startPhi + j * deltaPhi
         radius = self.radius * np.sin(phi)
         
         n[0] = radius * np.cos(theta)
@@ -319,7 +319,7 @@ class Sphere(object):
         if (self.LatLongTessellation == True):
           newPolys.InsertNextCell(3, pts[:3])
           pts[1] = pts[2]
-          pts[2] = pts[1] - 1;
+          pts[2] = pts[1] - 1
           newPolys.InsertNextCell(3, pts[:3])
         else:
           pts[3] = pts[2] - 1
@@ -355,12 +355,7 @@ def gen_surface(n, m, coef):
   
   return r, T, P
 
-def main():
-  # n, m, coeff = read_file()
-  # print(n[0], m[0], coeff[0])
-  # r, T, P = gen_surface(n, m, coeff)
-  # print(r.shape)#, T, P)
-
+def test_sphere_in_box():
 
   bounds = [-10., 20., 20., 40., 0., 60.]
   dims = (37, 23, 65)
@@ -376,15 +371,12 @@ def main():
   test.LatLongTessellation = False
   test.do_stuff()
 
-  #print(centers.GetOutput())
-  #quit()
 
   in_out = vtk.vtkUnsignedCharArray()
   in_out.SetNumberOfComponents(1)
   in_out.SetNumberOfTuples(centers.GetOutput().GetNumberOfCells())
   in_out.Fill(0)
   in_out.SetName("Inside")
-
 
 
   tree = vtk.vtkModifiedBSPTree()
@@ -403,6 +395,7 @@ def main():
   #pts_from_grid = sgrid.GetPoints()
   for idx in  range(centers.GetOutput().GetNumberOfCells()):
     grid_pt = centers.GetOutput().GetPoint(idx)
+    hex_cen.SetTuple(idx, grid_pt)
 
     code = tree.IntersectWithLine(box_centroid, grid_pt,
                                   tolerance, IntersectPoints,
@@ -421,6 +414,14 @@ def main():
   writer.SetFileName("test_inside.vts")
   writer.SetInputData(sgrid)
   writer.Write()
+
+def main():
+  n, m, coeff = read_file()
+  print(n[0], m[0], coeff[0])
+  r, T, P = gen_surface(n, m, coeff)
+  print(r.shape)#, T, P)
+
+  #test_sphere_in_box()
   
 
 if __name__ == '__main__':
