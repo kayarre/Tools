@@ -317,6 +317,229 @@ class Sphere(object):
     print("success")
 
 
+class star_object(object):
+  
+  def __init__(self, res=10):
+    res = (4 if res < 4 else res) # ternary
+    self.radius = 0.5
+    self.center = [0.0, 0.0, 0.0]
+    self.thetaResolution = int(res)
+    self.phiResolution = int(res)
+    self.startTheta = 0.0
+    self.endTheta = 360.0
+    self.startPhi = 0.0
+    self.endPhi = 180.0
+    self.LatLongTessellation = False
+    self.output = vtk.vtkPolyData()
+    self.tol = 1.0E-8
+
+  def read_file (self, file_path="/home/krs/code/python/Tools/vtk/c109-20001.anm"):
+    #path = "/home/krs/code/python/Tools/vtk/c109-20001.anm"
+    with open(file_path, mode="r") as f :
+      data = pd.read_csv(f, sep='\s+', names=["n", "m", "a", "aj" ])
+      #print(data.head())
+    self.n = data["n"].to_numpy()
+    self.m = data["m"].to_numpy()
+    #print(n.shape[0])
+    self.coeff = np.empty((self.n.shape[0]), dtype=complex)
+    self.coeff.real = data["a"].to_numpy()
+    self.coeff.imag = data["aj"].to_numpy()
+    #print(coeff[0])
+    # with open(path, mode="r") as f :
+    #   data = np.loadtxt(f, sep='\s+', names=["n", "m", "a", "aj" ])
+    #   print(data)
+    
+    #return n, m, coeff
+
+  def do_stuff(self):
+    x = [0.0, 0.0, 0.0]
+    n = [0.0, 0.0, 0.0]
+    pts = [0, 0, 0, 0]
+    numPoles = 0
+    localThetaResolution = self.thetaResolution
+    localStartTheta = self.startTheta
+    localEndTheta = self.endTheta
+
+    numPieces = self.thetaResolution
+
+    while(localEndTheta < localStartTheta):
+      localEndTheta += 360.0
+    
+    deltaTheta = (localEndTheta - localStartTheta) / localThetaResolution
+    
+    # if you eant to split this up into pieces this part here allow that
+    start = 0 #piece * localThetaResolution / numPieces
+    end = numPieces #1   #localThetaResolution / numPieces
+
+    localEndTheta = localStartTheta + float(end)*deltaTheta
+    localStartTheta = localStartTheta + float(start)*deltaTheta
+
+    localThetaIndx = int(end - start)
+
+    numPts = self.phiResolution * localThetaIndx + 2
+    numPolys = self.phiResolution * 2 * localThetaIndx
+
+    newPoints = vtk.vtkPoints()
+    newPoints.Allocate(numPts)
+
+    newPolys = vtk.vtkCellArray()
+    #newPolys.AllocateEstimate(numPolys, 3)
+    
+    newNormals = vtk.vtkDoubleArray()
+    newNormals.SetNumberOfComponents(3)
+    newNormals.Allocate(3 * numPts)
+    newNormals.SetName("Normals")
+    
+    # Create sphere
+    # Create north pole if needed
+    if (self.startPhi <= 0.0+self.tol):
+      radius = 0.0
+      for idx in range(self.n.shape[0]):
+        radius += self.coeff[idx] * special.sph_harm(self.m[idx], self.n[idx], 0.0, 0.0)
+
+      x[0] = self.center[0]
+      x[1] = self.center[1]
+      x[2] = self.center[2] + np.abs(radius) * self.radius
+
+      newPoints.InsertPoint(numPoles, x)
+
+      x[0] = 0.0
+      x[1] = 0.0
+      x[2] = 1.0
+      newNormals.InsertTuple(numPoles, x)
+      numPoles += 1
+
+    # Create south pole if needed
+    if (self.endPhi >= 180.0-self.tol):
+      radius = 0.0
+      print("got here")
+      for idx in range(self.n.shape[0]):
+        radius += self.coeff[idx] * special.sph_harm(self.m[idx], self.n[idx], 0.0, np.pi)
+      x[0] = self.center[0]
+      x[1] = self.center[1]
+      x[2] = self.center[2] - radius.real * self.radius
+      
+      newPoints.InsertPoint(numPoles, x)
+      
+      x[0] = 0.0
+      x[1] = 0.0
+      x[2] = -1.0
+
+      newNormals.InsertTuple(numPoles, x)
+      numPoles += 1
+
+    # Check data, determine increments, and convert to radians
+    startTheta = (localStartTheta if localStartTheta < localEndTheta else localEndTheta) 
+    startTheta *= vtk.vtkMath.Pi() / 180.0
+    
+    endTheta = (localEndTheta if localEndTheta > localStartTheta else localStartTheta)
+    endTheta *= vtk.vtkMath.Pi() / 180.0
+
+    startPhi = (self.startPhi if self.startPhi < self.endPhi else self.endPhi)
+    startPhi *= vtk.vtkMath.Pi() / 180.0
+    endPhi = (self.endPhi if self.endPhi > self.startPhi else self.startPhi)
+    endPhi *= vtk.vtkMath.Pi() / 180.0
+
+    phiResolution = self.phiResolution - numPoles
+    deltaPhi = (endPhi - startPhi) / (self.phiResolution - 1)
+    thetaResolution = localThetaResolution
+    # check that it should return float versus int
+    if (abs(localStartTheta - localEndTheta) < 360.0):
+      localThetaResolution += 1
+    deltaTheta = (endTheta - startTheta) / thetaResolution
+
+    jStart = (1 if self.startPhi <= 0.0 else 0)
+    jEnd = (self.phiResolution - 1  if self.endPhi >= 180.0 else self.phiResolution)
+
+    # Create intermediate points
+    for i in range(localThetaResolution):
+      theta = localStartTheta * vtk.vtkMath.Pi() / 180.0 + i * deltaTheta
+
+      for j in range(jStart, jEnd):
+        phi = startPhi + j * deltaPhi
+        # print(phi*180.0/np.pi)
+        radius = 0.0
+        for idx in range(self.n.shape[0]):
+          radius += self.coeff[idx] * special.sph_harm(self.m[idx], self.n[idx], theta, phi)
+
+        radius = self.radius*np.abs(radius) #radius scaling
+        #print(np.abs(radius))
+        #quit()
+        sinphi = np.sin(phi)
+        n[0] = radius * np.cos(theta) * sinphi
+        n[1] = radius * np.sin(theta) * sinphi
+        n[2] = radius * np.cos(phi)
+        
+        x[0] = n[0] + self.center[0]
+        x[1] = n[1] + self.center[1]
+        x[2] = n[2] + self.center[2]
+        newPoints.InsertNextPoint(x)
+
+        norm = vtk.vtkMath.Norm(n)
+        if (norm == 0.0):
+          norm = 1.0
+        n[0] /= norm
+        n[1] /= norm
+        n[2] /= norm
+        newNormals.InsertNextTuple(n)
+
+    # Generate mesh connectivity
+    base = phiResolution * localThetaResolution
+
+    # check if fabs is required
+    if (abs(localStartTheta - localEndTheta) < 360.0):
+        localThetaResolution -= 1
+    if (self.startPhi <= 0.0): # around north pole
+      for i in range(localThetaResolution):
+        pts[0] = (phiResolution * i + numPoles)
+        pts[1] = ((phiResolution * (i + 1) % base) + numPoles)
+        pts[2] = 0
+        newPolys.InsertNextCell(3, pts[:3])
+  
+
+    if (self.endPhi >= 180.0): # around south pole
+      numOffset = phiResolution - 1 + numPoles
+      
+      for i in range(localThetaResolution):
+        pts[0] = phiResolution * i + numOffset
+        pts[2] = ((phiResolution * (i + 1)) % base) + numOffset
+        pts[1] = numPoles - 1
+      
+        newPolys.InsertNextCell(3, pts[:3])
+
+    # bands in-between poles
+    for i in range(localThetaResolution):
+      for j in range(phiResolution - 1):
+        pts[0] = phiResolution * i + j + numPoles
+        pts[1] = pts[0] + 1
+        pts[2] = ((phiResolution * (i + 1) + j) % base) + numPoles + 1
+        if (self.LatLongTessellation == True):
+          newPolys.InsertNextCell(3, pts[:3])
+          pts[1] = pts[2]
+          pts[2] = pts[1] - 1
+          newPolys.InsertNextCell(3, pts[:3])
+        else:
+          pts[3] = pts[2] - 1
+          newPolys.InsertNextCell(4, pts)
+
+    # Update ourselves and release memory
+    #
+    newPoints.Squeeze()
+    self.output.SetPoints(newPoints)
+    #newPoints.Delete()
+    newNormals.Squeeze()
+    self.output.GetPointData().SetNormals(newNormals)
+    #newNormals.Delete()
+    newPolys.Squeeze()
+    self.output.SetPolys(newPolys)
+    #newPolys.Delete()
+
+    writer2 = vtk.vtkXMLPolyDataWriter()
+    writer2.SetFileName("test_star.vtp")
+    writer2.SetInputData(self.output)
+    writer2.Write()
+    print("success")
+
 def gen_surface(n, m, coef):
   theta = np.linspace(0.0, 2.0*np.pi, num=20, endpoint=False) # don't repeat the last part
   phi = np.linspace(0.0, np.pi, num=20, endpoint=True)
@@ -349,7 +572,7 @@ def test_sphere_in_box():
   in_out.SetNumberOfComponents(1)
   in_out.SetNumberOfTuples(centers.GetOutput().GetNumberOfCells())
   in_out.Fill(0)
-  in_out.SetName("Inside")
+  in_out.SetName("inside")
 
 
   tree = vtk.vtkModifiedBSPTree()
@@ -383,19 +606,47 @@ def test_sphere_in_box():
   sgrid.GetCellData().AddArray(hex_cen)
 
   # Uncomment the next two lines to save the dataset to a VTK XML file.
-  writer = vtk.vtkXMLStructuredGridWriter()
-  writer.SetFileName("test_inside.vts")
-  writer.SetInputData(sgrid)
+  # writer = vtk.vtkXMLStructuredGridWriter()
+  # writer.SetFileName("test_inside.vts")
+  # writer.SetInputData(sgrid)
+  # writer.Write()
+
+  #threshold the grid by the inside hexahedrals
+  thresh = vtk.vtkThreshold()
+  thresh.ThresholdByUpper(0.5)
+  thresh.SetInputData(sgrid)
+  #for point data
+  #thresh.SetInputArrayToProcess(0, 0, 0, vtk.vtkDataObject.FIELD_ASSOCIATION_POINTS, "distance");
+  #for cell data
+  thresh.SetInputArrayToProcess(0, 0, 0, vtk.vtkDataObject.FIELD_ASSOCIATION_CELLS, "inside")
+  thresh.Update()
+
+  # Uncomment the next two lines to save the dataset to a VTK XML file.
+  writer = vtk.vtkXMLUnstructuredGridWriter()
+  writer.SetFileName("clipped_cells.vtu")
+  writer.SetInputConnection(thresh.GetOutputPort())
   writer.Write()
 
-def main():
-  # n, m, coeff = read_file()
-  # print(n[0], m[0], coeff[0])
-  # r, T, P = gen_surface(n, m, coeff)
-  # print(r.shape)#, T, P)
+def test_star():
+  test = star_object()#res=20)
+  test.phiResolution = 120
+  test.thetaResolution = 80
+  test.read_file()
+  test.center = (0.0, 0.0, 0.0) 
+  test.radius = 1.0
+  test.LatLongTessellation = False
+  test.do_stuff()
 
-  test_sphere_in_box()
+def main():
+  n, m, coeff = read_file()
+  print(n[0], m[0], coeff[0])
+  r, T, P = gen_surface(n, m, coeff)
+  print(r.shape)#, T, P)
+
+  #test_sphere_in_box()
   
+
+  test_star()
 
 if __name__ == '__main__':
   main()
