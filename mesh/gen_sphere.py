@@ -1,18 +1,48 @@
-
-import numpy as np #from numpy import mgrid, empty, sin, pi
-#import vtk
-
+import numpy as np  # from numpy import mgrid, empty, sin, pi
 import pandas as pd
 from scipy import special
-import numpy
 import meshio
+import pooch
+import os
+import optimesh
 
 
-def uv_sphere(num_points_per_circle=20, num_circles=10, radius=1.0):
+def Cart_to_Spherical_np(xyz):
+    # physics notation
+    ptsnew = np.zeros(xyz.shape)  # np.hstack((xyz, np.zeros(xyz.shape)))
+    xy = xyz[:, 0] ** 2 + xyz[:, 1] ** 2  # r
+    ptsnew[:, 0] = np.sqrt(xy + xyz[:, 2] ** 2)
+    # ptsnew[:, 1] = np.arctan2(  # theta
+    #     np.sqrt(xy), xyz[:, 2]
+    # )  # for elevation angle defined from Z-axis down
+    ptsnew[:, 1] = np.arctan2(  # theta
+        xyz[:, 2], np.sqrt(xy)
+    )  # for elevation angle defined from XY-plane up
+    ptsnew[:, 2] = np.arctan2(xyz[:, 1], xyz[:, 0])  # phi
+    return ptsnew
+
+
+def appendSpherical_np(xyz):
+    # physics notation
+    ptsnew = np.hstack((xyz, np.zeros(xyz.shape)))
+    xy = xyz[:, 0] ** 2 + xyz[:, 1] ** 2
+    ptsnew[:, 3] = np.sqrt(xy + xyz[:, 2] ** 2)  # r
+    ptsnew[:, 4] = np.arctan2(  # theta
+        np.sqrt(xy), xyz[:, 2]
+    )  # for elevation angle defined from Z-axis down
+    # ptsnew[:,4] = np.arctan2(xyz[:,2], np.sqrt(xy)) # for elevation angle defined from XY-plane up
+    ptsnew[:, 5] = np.arctan2(xyz[:, 1], xyz[:, 0])  # phi
+    return ptsnew
+
+
+def uv_sphere(
+    num_points_per_circle=20, num_circles=10, radius=1.0,
+):
     # Mesh parameters
     n_phi = num_points_per_circle
     n_theta = num_circles
 
+    # physics notation
     # Generate suitable ranges for parametrization
     phi_range = np.linspace(0.0, 2 * np.pi, num=n_phi, endpoint=False)
     theta_range = np.linspace(
@@ -42,21 +72,8 @@ def uv_sphere(num_points_per_circle=20, num_circles=10, radius=1.0):
     # north pole
     north_pole_index = k
     nodes[k] = np.array([0.0, 0.0, 1.0])
-  
+
     nodes *= radius
-    
-    theta = np.arctan2(nodes[:,1], nodes[:,0])
-    phi = np.arccos(nodes[:,2] / nodes[:,0])
-
-    Theta, Phi = np.meshgrid(theta, phi)
-
-    r = np.zeros(Theta.shxape, dtype=complex)
-    for idx in range(n.shape[0]):
-      r += coef[idx] * special.sph_harm(m[idx], n[idx], T, P)
-  
-  return r, T, P
-
-    quit()
 
     # create the elements (cells)
     num_elems = 2 * (n_theta - 2) * n_phi
@@ -73,8 +90,12 @@ def uv_sphere(num_points_per_circle=20, num_circles=10, radius=1.0):
 
     # non-pole elements
     for i in range(n_theta - 3):
-        for j in range(n_phi - 1):  def phi(self, x):
-    return np.arccos(x[2] / x[0])
+        for j in range(n_phi - 1):
+            elems[k] = np.array(
+                [i * n_phi + j + 1, i * n_phi + j + 2, (i + 1) * n_phi + j + 2]
+            )
+            k += 1
+            elems[k] = np.array(
                 [i * n_phi + j + 1, (i + 1) * n_phi + j + 2, (i + 1) * n_phi + j + 1]
             )
             k += 1
@@ -84,8 +105,15 @@ def uv_sphere(num_points_per_circle=20, num_circles=10, radius=1.0):
         elems[k] = np.array([(i + 1) * n_phi, i * n_phi + 1, (i + 1) * n_phi + 1])
         k += 1
         elems[k] = np.array([(i + 1) * n_phi, (i + 1) * n_phi + 1, (i + 2) * n_phi])
-        k += 1  def phi(self, x):
-    return np.arccos(x[2] / x[0])
+        k += 1
+
+    # connections to the north pole
+    for i in range(n_phi - 1):
+        elems[k] = np.array(
+            [
+                i + 1 + n_phi * (n_theta - 3) + 1,
+                i + n_phi * (n_theta - 3) + 1,
+                north_pole_index,
             ]
         )
         k += 1
@@ -110,8 +138,8 @@ def tetra_sphere(n):
             [-np.sqrt(2) / 3, np.sqrt(2.0 / 3.0), -1.0 / 3.0],
             [-np.sqrt(2) / 3, -np.sqrt(2.0 / 3.0), -1.0 / 3.0],
             [0.0, 0.0, 1.0],
-        ]  def phi(self, x):
-    return np.arccos(x[2] / x[0])
+        ]
+    )
     faces = [(0, 1, 2), (0, 1, 3), (0, 2, 3), (1, 2, 3)]
     return _sphere_from_triangles(corners, faces, n)
 
@@ -128,15 +156,17 @@ def octa_sphere(n):
         ]
     )
     faces = [
-        (0, 2, 4),        for idx in range(self.n.shape[0]):
-          radius += self.coeff[idx] * special.sph_harm(self.m[idx], self.n[idx], theta, phi)
+        (0, 2, 4),
         (1, 2, 4),
         (1, 3, 4),
         (0, 3, 4),
         (0, 2, 5),
         (1, 2, 5),
-        (1, 3, 5),  def phi(self, x):
-    return np.arccos(x[2] / x[0])
+        (1, 3, 5),
+    ]
+    return _sphere_from_triangles(corners, faces, n)
+
+
 def icosa_sphere(n):
     assert n >= 1
     # Start off with an isosahedron and refine.
@@ -160,8 +190,13 @@ def icosa_sphere(n):
             [+t, +0, -1],
             [+t, +0, +1],
             [-t, +0, -1],
-            [-t, +0, +1],  def phi(self, x):
-    return np.arccos(x[2] / x[0])
+            [-t, +0, +1],
+        ]
+    )
+
+    faces = [
+        (0, 11, 5),
+        (0, 5, 1),
         (0, 1, 7),
         (0, 7, 10),
         (0, 10, 11),
@@ -176,8 +211,10 @@ def icosa_sphere(n):
         (3, 6, 8),
         (3, 8, 9),
         (4, 9, 5),
-        (2, 4, 11),  def phi(self, x):
-    return np.arccos(x[2] / x[0])
+        (2, 4, 11),
+        (6, 2, 10),
+        (8, 6, 7),
+        (9, 8, 1),
     ]
     return _sphere_from_triangles(corners, faces, n)
 
@@ -236,10 +273,7 @@ def _sphere_from_triangles(corners, faces, n):
         else:
             bary = (
                 np.hstack(
-                    [
-                        [np.full(n - i - 1, i), np.arange(1, n - i)]
-                        for i in range(1, n)
-                    ]
+                    [[np.full(n - i - 1, i), np.arange(1, n - i)] for i in range(1, n)]
                 )
                 / n
             )
@@ -258,7 +292,19 @@ def _sphere_from_triangles(corners, faces, n):
         tt[num_nodes_per_triangle - 1] = corner_nodes[corners[2]]
         # then the edges.
         # edge 0
-        tt[1:n] = edge_nodecoeff
+        tt[1:n] = edge_nodes[edges[0]]
+        if is_edge_reverted[0]:
+            tt[1:n] = tt[1:n][::-1]
+        #
+        # edge 1
+        idx = 2 * n
+        for k in range(n - 1):
+            if is_edge_reverted[1]:
+                tt[idx] = edge_nodes[edges[1]][n - 2 - k]
+            else:
+                tt[idx] = edge_nodes[edges[1]][k]
+            idx += n - k - 1
+        #
         # edge 2
         idx = n + 1
         for k in range(n - 1):
@@ -291,279 +337,244 @@ def _sphere_from_triangles(corners, faces, n):
     return vertices, cells
 
 
-
 class star_object(object):
-  
-  def __init__(self, res=10):
-    res = (4 if res < 4 else res) # ternary
-    # self.radius = 1.0
-    # self.center = [0.0, 0.0, 0.0]
-    # self.thetaResolution = int(res)
-    # self.phiResolution = int(res)
-    # self.startTheta = 0.0
-    # self.endTheta = 360.0
-    # self.startPhi = 0.0
-    # self.endPhi = 180.0
-    # self.LatLongTessellation = False
-    # self.output = vtk.vtkPolyData()
-    # self.tol = 1.0E-8
-    self.file_path = "/home/krs/code/python/Tools/mesh/c109-20001.anm"
-    self.read_file()
+    def __init__(self, file_path=None):  # , res=10):
+        # res = 4 if res < 4 else res  # ternary
+        # self.radius = 1.0
+        # self.center = [0.0, 0.0, 0.0]
+        # self.thetaResolution = int(res)
+        # self.phiResolution = int(res)
+        # self.startTheta = 0.0
+        # self.endTheta = 360.0
+        # self.startPhi = 0.0
+        # self.endPhi = 180.0
+        # self.LatLongTessellation = False
+        # self.output = vtk.vtkPolyData()
+        # self.tol = 1.0E-8
+        if file_path != None:
+            self.file_path = file_path
+            self.read_file()
+        else:
+            self.file_path = "/home/krs/code/python/Tools/mesh/c109-20001.anm"
+        # self.read_file()
 
-  def read_file (self, file_path=None):
-    if (file_path != None):
-      self.file_path = file_path
+    def read_file(self, file_path=None):
+        if file_path != None:
+            self.file_path = file_path
 
-    with open(self.file_path, mode="r") as f :
-      data = pd.read_csv(f, sep='\s+', names=["n", "m", "a", "aj" ])
-      #print(data.head())
-    self.n = data["n"].to_numpy()
-    self.m = data["m"].to_numpy()
-    #print(n.shape[0])
-    self.coeff = np.empty((self.n.shape[0]), dtype=complex)
-    self.coeff.real = data["a"].to_numpy()
-    self.coeff.imag = data["aj"].to_numpy()
-    #print(coeff[0])
+        with open(self.file_path, mode="r") as f:
+            data = pd.read_csv(f, sep="\s+", names=["n", "m", "a", "aj"])
+            # print(data.head())
+        self.n = data["n"].to_numpy()
+        self.m = data["m"].to_numpy()
+        # print(n.shape[0])
+        self.coeff = np.empty((self.n.shape[0]), dtype=complex)
+        self.coeff.real = data["a"].to_numpy()
+        self.coeff.imag = data["aj"].to_numpy()
+        # print(coeff[0])
 
-  def theta(self, x):
-    return np.artan2(x[1], x[0])
+    def Cart_to_Spherical_np(self, xyz):
+        # physics notation
+        ptsnew = np.zeros(xyz.shape)
+        xy = xyz[0] ** 2 + xyz[1] ** 2  # r
+        ptsnew[0] = np.sqrt(xy + xyz[2] ** 2)
+        ptsnew[1] = np.arctan2(  # theta
+            np.sqrt(xy), xyz[2]
+        )  # for elevation angle defined from Z-axis down
+        # ptsnew[:, 1] = np.arctan2(  # theta
+        #     xyz[:, 2], np.sqrt(xy)
+        # )  # for elevation angle defined from XY-plane up
+        ptsnew[2] = np.arctan2(xyz[1], xyz[0])  # phi
+        return ptsnew
 
-  def phi(self, x):
-    return np.arccos(x[2] / x[0])
+    # scalar
+    def get_radius(self, theta, phi):
+        radius = np.zeros(theta.shape, dtype=np.complex)
+        for idx in range(self.n.shape[0]):
+            radius += self.coeff[idx] * special.sph_harm(
+                self.m[idx], self.n[idx], theta, phi
+            )
+        return radius.real
 
-  def get_radius(self, theta, phi):
-    radius = 0.0
-    for idx in range(self.n.shape[0]):
-        radius += self.coeff[idx] * special.sph_harm(self.m[idx], self.n[idx], theta, phi)
-    return radius.real
+    def get_derivatives(self, r, theta, phi):
+        radius = np.zeros(theta.shape, dtype=np.complex)
+        r_theta = np.zeros(theta.shape, dtype=np.complex)
+        r_phi = np.zeros(theta.shape, dtype=np.complex)
+        for idx in range(self.n.shape[0]):
+            r_theta += (
+                self.m[idx]
+                * 1.0j
+                * self.coeff[idx]
+                * special.sph_harm(self.m[idx], self.n[idx], theta, phi)
+            )
+            f_nm = (
+                ((2.0 * self.n[idx] + 1) * special.factorial(self.n[idx] - self.m[idx]))
+                / (4.0 * np.pi * (special.factorial(self.n[idx] + self.m[idx])))
+            ) ** (0.5)
 
-  def f(self, x):
-      t = self.theta(x)
-      p = self.phi(x)
-      radius = self.get_radius(theta, phi)
-      return radius**2 - (x[0] ** 2 + x[1] ** 2 + x[2] ** 2)
+            pre_coef = f_nm * np.exp(1.0j * self.m[idx] * theta)
 
+            c_nm_1 = 0.5 * (
+                (self.n[idx] + self.m[idx]) * (self.n[idx] - self.m[idx] + 1)
+            ) ** (0.5)
+            c_nm_2 = 0.5 * (
+                (self.n[idx] + self.m[idx]) * (self.n[idx] + self.m[idx] + 1)
+            ) ** (0.5)
 
-  def grad(self, x):
-      t = self.theta(x)
-      p = self.phi(x)
-      radius = self.get_radius(theta, phi)
-      return radius**2 - (x[0] ** 2 + x[1] ** 2 + x[2] ** 2)
-      return -2 * x
+            r_phi += pre_coef * (
+                c_nm_1 * special.lpmv(self.m[idx] - 1, self.n[idx], np.cos(phi))
+                - c_nm_2 * special.lpmv(self.m[idx] + 1, self.n[idx], np.cos(phi))
+            )
 
+        # S = r * (
+        #     r_theta ** 2.0 + r_phi ** 2.0 * np.sin(phi) ** 2.0 + r ** 2.0 * np.sin(phi)
+        # ) ** (0.5)
 
-  def get_file_path(self):
-    return self.file_path
+        n_x = (
+            r * r_theta * np.sin(theta)
+            - r * r_phi * np.sin(phi) * np.cos(phi) * np.cos(theta)
+            + r ** 2.0 * np.sin(phi) ** 2.0 * np.cos(theta)
+        )  # / S
 
-  def set_file_path(self, file_path):
-    self.file_path = file_path
-  #     x[2] = 1.0
-  #   x = [0.0, 0.0, 0.0]
-  #     x[2] = 1.0Theta
-  #   localEndTheta = self.endTheta
+        n_y = (
+            -r * r_theta * np.cos(theta)
+            - r * r_phi * np.sin(phi) * np.cos(phi) * np.sin(theta)
+            + r * r * np.sin(phi) ** 2.0 * np.sin(theta)
+        )  # / S
 
-  #   numPieces = self.thetaResolution
+        n_z = r * r_phi * np.sin(phi) ** (2.0) + r * r * np.cos(phi) * np.sin(
+            phi
+        )  # / S
 
-  #   while(localEndTheta < localStartTheta):
-  #     localEndTheta += 360.0
-    
-  #   deltaTheta = (localEndTheta - localStartTheta) / localThetaResolution
-    
-  #   # if you eant to split this up into pieces this part here allow that
-  #   start = 0 #piece * localThetaResolution / numPieces
-  #   end = numPieces #1   #localThetaResolution / numPieces
+        coords = np.stack((n_x.real, n_y.real, n_z.real), axis=0)
 
-  #   localEndTheta = localStartTheta + float(end)*deltaTheta
-  #   localStartTheta = localStartTheta + float(start)*deltaTheta
+        return coords
 
-  #   localThetaIndx = int(end - start)
+    # scalar
+    def f(self, x):
+        sph_coord = self.Cart_to_Spherical_np(x)
+        # note the switch to math notation
+        radius = self.get_radius(sph_coord[2], sph_coord[1])
+        f_res = radius ** 2 - (x[0] ** 2 + x[1] ** 2 + x[2] ** 2)
+        return f_res
 
-  #   numPts = self.phiResolution * localThetaIndx + 2
-  #   numPolys = self.phiResolution * 2 * localThetaIndx
+    def grad(self, x):
+        if x.shape[1] != 3:
+            if x.shape[1] == 3 and x.shape[0] == 3:
+                print("input is ambiguous")
+            x = x.T
+        else:
+            print("there is a weird issue with the grad operator")
+        sph_coord = self.Cart_to_Spherical_np(x)
 
-  #   newPoints = vtk.vtkPoints()
-  #   newPoints.Allocate(numPts)
+        radius = self.get_radius(sph_coord[:, 2], sph_coord[:, 1])
 
-  #   newPolys = vtk.vtkCellArray()
-  #   #newPolys.AllocateEstimate(numPolys, 3)
-    
-  #   newNormals = vtk.vtkDoubleArray()
-  #   newNormals.SetNumberOfComponents(3)
-  #   newNormals.Allocate(3 * numPts)
-  #   newNormals.SetName("Normals")
-    
-  #   # Create sphere
-  #   # Create north pole if needed
-  #   if (self.startPhi <= 0.0+self.tol):
-  #     radius = 0.0
+        der_ = self.get_derivatives(radius, sph_coord[:, 2], sph_coord[:, 1])
 
-  #     x[2] = 1.0
+        return der_
 
-  #     x[0] = 0.0
-  #     x[1] = 0.0
-  #     x[2] = 1.0
-  #     newNormals.InsertTuple(numPoles, x)
-  #     numPoles += 1
+    def get_file_path(self):
+        return self.file_path
 
-  #   # Create south pole if needed
-  #   if (self.endPhi >= 180.0-self.tol):
-  #     radius = 0.0
-  #     print("got here")
-  #     for idx in range(self.n.shape[0]):
-  #       radius += self.coeff[idx] * special.sph_harm(self.m[idx], self.n[idx], 0.0, np.pi)
-  #     x[0] = self.center[0]
-  #     x[1] = self.center[1]
-  #     x[2] = self.center[2] - radius.real * self.radius
-      
-  #     newPoints.InsertPoint(numPoles, x)
-      
-  #     x[2] = 1.0
-
-  #     newNormals.InsertTuple(numPoles, x)
-  #     numPoles += 1
-
-  #   # Check data, determine increments, and convert to radians
-  #   startTheta = (localStartTheta if localStartTheta < localEndTheta else localEndTheta) 
-  #   startTheta *= vtk.vtkMath.Pi() / 180.0
-    
-  #   endTheta = (localEndTheta if localEn
-  #     x[2] = 1.0
-  #   endPhi *= vtk.vtkMath.Pi() / 180.0
-
-  #   phiResolution = self.phiResolution - numPoles
-  #   deltaPhi = (endPhi - startPhi) / (self.phiResolution - 1)
-  #   thetaResolution = localThetaResolution
-  #   # check that it should return float versus int
-  #   if (abs(localStartTheta - localEndTheta) < 360.0):
-  #     localThetaResolution += 1
-  #   deltaTheta = (endTheta - startTheta) / thetaResolution
-
-  #   jStart = (1 if self.startPhi <= 0.0 else 0)
-  #   jEnd = (self.phiResolution - 1  if self.endPhi >= 180.0 else self.phiResolution)
-
-  #   # Create intermediate points
-  #   for i in range(localThetaResolution):
-  #     theta = localStartTheta * vtk.vtkMath.Pi() / 180.0 + i * deltaTheta
-
-  #     for j in range(jStart, jEnd):
-  #       phi = startPhi + j * deltaPhi
-  #       # print(phi*180.0/np.pi)
-  #       radius = 0.0
-  #       for idx in range(self.n.shape[0]):
-  #         radius += self.coeff[idx] * special.sph_harm(self.m[idx], self.n[idx], theta, phi)
-
-  #       radius = self.radius*np.abs(radius) #radius scaling
-  #       #print(np.abs(radius))
-  #       #quit()
-  #       sinphi = np.sin(phi)
-  #       n[0] = radius * np.cos(theta) * sinphi
-  #       n[1] = radius * np.sin(theta) * sinphi
-  #       n[2] = radius * np.cos(phi)
-        
-  #       x[0] = n[0] + self.center[0]
-  #       x[1] = n[1] + self.center[1]
-  #       x[2] = n[2] + self.center[2]
-  #       newPoints.InsertNextPoint(x)
-
-  #       norm = vtk.vtkMath.Norm(n)
-  #       if (norm == 0.0):
-  #         norm = 1.0
-  #       n[0] /= norm
-  #       n[1] /= norm
-  #       n[2] /= norm
-  #       newNormals.InsertNextTuple(n)
-
-  #   # Generate mesh connectivity
-  #   base = phiResolution * localThetaResolution
-
-  #   # check if fabs is required
-  #   if (abs(localStartTheta - localEndTheta) < 360.0):
-  #       localThetaResolution -= 1
-  #   if (self.startPhi <= 0.0): # around north pole
-  #     for i in range(localThetaResolution):
-  #       pts[0] = (phiResolution * i + numPoles)
-  #       pts[1] = ((phiResolution * (i + 1) % base) + numPoles)
-  #       pts[2] = 0
-  #       newPolys.InsertNextCell(3, pts[:3])
-  
-
-  #   if (self.endPhi >= 180.0): # around south pole
-  #     numOffset = phiResolution - 1 + numPoles
-      
-  #     for i in range(localThetaResolution):
-  #       pts[0] = phiResolution * i + numOffset
-  #       pts[2] = ((phiResolution * (i + 1)) % base) + numOffset
-  #       pts[1] = numPoles - 1
-      
-  #       newPolys.InsertNextCell(3, pts[:3])
-
-  #   # bands in-between poles
-  #   for i in range(localThetaResolution):
-  #     for j in range(phiResolution - 1):
-  #       pts[0] = phiResolution * i + j + numPoles
-  #       pts[1] = pts[0] + 1
-  #       pts[2] = ((phiResolution * (i + 1) + j) % base) + numPoles + 1
-  #       if (self.LatLongTessellation == True):
-  #         newPolys.InsertNextCell(3, pts[:3])
-  #         pts[1] = pts[2]
-  #         pts[2] = pts[1] - 1
-  #         newPolys.InsertNextCell(3, pts[:3])
-  #       else:
-  #         pts[3] = pts[2] - 1
-  #         newPolys.InsertNextCell(4, pts)
-
-  #   # Update ourselves and release memory
-  #   #
-  #   newPoints.Squeeze()
-  #   self.output.SetPoints(newPoints)
-  #   #newPoints.Delete()
-  #   newNormals.Squeeze()
-  #   self.output.GetPointData().SetNormals(newNormals)
-  #   #newNormals.Delete()
-  #   newPolys.Squeeze()
-  #   self.output.SetPolys(newPolys)
-  #   #newPolys.Delete()
-
-  #   writer2 = vtk.vtkXMLPolyDataWriter()
-  #   writer2.SetFileName("test_star.vtp")
-  #   writer2.SetInputData(self.output)
-  #   writer2.Write()
-  #   print("success")
-
-def gen_surface(n, m, coef):
-  theta = np.linspace(0.0, 2.0*np.pi, num=20, endpoint=False) # don't repeat the last part
-  phi = np.linspace(0.0, np.pi, num=20, endpoint=True)
-
-  T, P = np.meshgrid(theta, phi) # thete is 0-2pi, and phi is 0-pi
-  r = np.zeros(T.shape, dtype=complex)
-  for idx in range(n.shape[0]):
-    r += coef[idx] * special.sph_harm(m[idx], n[idx], T, P)
-  
-  return r, T, P
+    def set_file_path(self, file_path_str):
+        self.file_path = file_path_str
 
 
-def test_star():
-  test = star_object()#res=20)
-  test.phiResolution = 120
-  test.thetaResolution = 80
-  test.read_file()
-  test.center = (0.0, 0.0, 0.0) 
-  test.radius = 1.0
-  test.LatLongTessellation = False
-  test.do_stuff()
+def setup_pooch():
+    # Define the Pooch exactly the same (urls is None by default)
+    GOODBOY = pooch.create(
+        path=pooch.os_cache("particles"),
+        base_url="ftp://ftp.nist.gov/pub/bfrl/garbocz/Particle-shape-database/",
+        version="0.0.1",
+        version_dev="master",
+        registry=None,
+    )
+    # If custom URLs are present in the registry file, they will be set automatically
+    GOODBOY.load_registry(os.path.join(os.path.dirname(__file__), "registry.txt"))
+
+    return GOODBOY
+
+
+def convert_nodes(nodes, star_data):
+    sph = Cart_to_Spherical_np(nodes)
+
+    r = np.zeros(sph[:, 0].shape, dtype=complex)
+    for idx in range(star_data.n.shape[0]):
+
+        # shift phi to be 0 <= phi <= pi
+        r += star_data.coeff[idx] * special.sph_harm(
+            star_data.m[idx], star_data.n[idx], sph[:, 2], sph[:, 1] + np.pi / 2.0
+        )
+    r_real = r.real
+    # print(np.abs(r), r.real)
+    # scalar * [nx3] * [n,] = [nx3]
+    nodes *= r_real[:, None]
+
+    return nodes
+
+
+class Sphere:
+    def f(self, x):
+        # print(x.shape)
+        return 1.0 - (x[0] ** 2 + x[1] ** 2 + x[2] ** 2)
+
+    def grad(self, x):
+        # print(x.shape)
+        return -2 * x
+
 
 def main():
 
-  points, cells = uv_sphere(2)
+    pooch_particles = setup_pooch()
+    fname = pooch_particles.fetch("C109-sand/C109-20002.anm")
+    print(fname)
+    sand = star_object()
+    sand.set_file_path(fname)
+    sand.read_file()
 
-  # You can use all methods in optimesh:
-  # points, cells = optimesh.cpt.fixed_point_uniform(
-  # points, cells = optimesh.odt.fixed_point_uniform(
-  # points, cells = optimesh.cvt.quasi_newton_uniform_full(
-  #     points, cells, 1.0e-2, 100, verbose=False,
-  #     implicit_surface=Sphere(),
-  #     # step_filename_format="out{:03d}.vtk"
-  # )
+    # points, cells = uv_sphere(20)
+    points, cells = icosa_sphere(10)
+    conv_pts = convert_nodes(points, sand) / 100.0
+    # print(points, cells)
+    tri_cells = [("triangle", cells)]
 
-if __name__ == '__main__':
-  main()
+    mesh = meshio.write_points_cells("test.vtk", conv_pts, tri_cells)
+    print("made sand surface")
+
+    test = star_object(fname)
+    print(points.T.shape)
+    s_pts = test.f(points.T)
+    s_grad = test.grad(points.T)
+    print(s_pts.shape, s_grad.shape)
+    # You can use all methods in optimesh:
+    # points, cells = optimesh.cpt.fixed_point_uniform(
+    # points, cells = optimesh.odt.fixed_point_uniform(
+    points_opt, cells_opt = optimesh.cvt.quasi_newton_uniform_blocks(
+        conv_pts,
+        cells,
+        1.0e-2,
+        10,
+        verbose=True,
+        implicit_surface=Sphere(),  # star_object(fname),
+        # step_filename_format="out{:03d}.vtk"
+    )
+
+    # points_opt, cells_opt = optimesh.cvt.quasi_newton_uniform_blocks(
+    #     conv_pts,
+    #     cells,
+    #     1.0e-2,
+    #     10,
+    #     verbose=True,
+    #     implicit_surface=star_object(fname),
+    #     # step_filename_format="out{:03d}.vtk"
+    # )
+
+    tri_cells_opt = [("triangle", cells_opt)]
+
+    mesh = meshio.write_points_cells("test_opt.vtk", points_opt, tri_cells_opt)
+    print("optimized sand surface")
+
+
+if __name__ == "__main__":
+    main()
+
