@@ -345,6 +345,10 @@ class star_object(object):
 
 
   def grad(self, x):
+      t = self.theta(x)
+      p = self.phi(x)
+      radius = self.get_radius(theta, phi)
+      return radius**2 - (x[0] ** 2 + x[1] ** 2 + x[2] ** 2)
       return -2 * x
 
 
