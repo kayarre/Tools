@@ -1,8 +1,15 @@
-from fabric.api import run, env
+#from fabric.api import run, env
 import sys
 
-env.user = "parallella"
-env.password = "parallella"
+from fabric import Connection
+from fabric import task
+
+#env.user = "parallella"
+#env.password = "parallella"
+
+#env.user = "Admin"
+#env.password = ""
+
 
 def host_type():
     try:
@@ -10,3 +17,7 @@ def host_type():
     except: 
       e = sys.exc_info()[0]
       print(e)
+
+@task
+def hello(ctx):
+  print("Hello World")
