@@ -5,20 +5,23 @@ import meshio
 import pooch
 import os
 import optimesh
+import sys
+
+np.set_printoptions(threshold=sys.maxsize)
 
 
 def Cart_to_Spherical_np(xyz):
     # physics notation
     ptsnew = np.zeros(xyz.shape)  # np.hstack((xyz, np.zeros(xyz.shape)))
-    xy = xyz[:, 0] ** 2 + xyz[:, 1] ** 2  # r
-    ptsnew[:, 0] = np.sqrt(xy + xyz[:, 2] ** 2)
+    xy = xyz[0] ** 2 + xyz[1] ** 2  # r
+    ptsnew[0] = np.sqrt(xy + xyz[2] ** 2)
     # ptsnew[:, 1] = np.arctan2(  # theta
     #     np.sqrt(xy), xyz[:, 2]
     # )  # for elevation angle defined from Z-axis down
-    ptsnew[:, 1] = np.arctan2(  # theta
-        xyz[:, 2], np.sqrt(xy)
+    ptsnew[1] = np.arctan2(  # theta
+        xyz[2], np.sqrt(xy)
     )  # for elevation angle defined from XY-plane up
-    ptsnew[:, 2] = np.arctan2(xyz[:, 1], xyz[:, 0])  # phi
+    ptsnew[2] = np.arctan2(xyz[1], xyz[0])  # phi
     return ptsnew
 
 
@@ -372,11 +375,21 @@ class star_object(object):
         self.coeff.real = data["a"].to_numpy()
         self.coeff.imag = data["aj"].to_numpy()
         # print(coeff[0])
+        self.set_norm_coeff()
+        # normalizing the coefficients
+        self.set_coeff_to_norm()
 
-    def Cart_to_Spherical_np(self, xyz):
+    def set_norm_coeff(self):
+        self.norm_coeff = self.coeff / self.coeff[0]
+
+    def set_coeff_to_norm(self):
+        self.coeff = self.norm_coeff
+
+    def cart_to_spherical_np(self, xyz):
         # physics notation
         ptsnew = np.zeros(xyz.shape)
         xy = xyz[0] ** 2 + xyz[1] ** 2  # r
+
         ptsnew[0] = np.sqrt(xy + xyz[2] ** 2)
         ptsnew[1] = np.arctan2(  # theta
             np.sqrt(xy), xyz[2]
@@ -384,7 +397,10 @@ class star_object(object):
         # ptsnew[:, 1] = np.arctan2(  # theta
         #     xyz[:, 2], np.sqrt(xy)
         # )  # for elevation angle defined from XY-plane up
+        # print(ptsnew[1])
+        # quit()
         ptsnew[2] = np.arctan2(xyz[1], xyz[0])  # phi
+
         return ptsnew
 
     # scalar
@@ -400,59 +416,144 @@ class star_object(object):
         radius = np.zeros(theta.shape, dtype=np.complex)
         r_theta = np.zeros(theta.shape, dtype=np.complex)
         r_phi = np.zeros(theta.shape, dtype=np.complex)
+        Pnm_phi = np.zeros(theta.shape, dtype=np.complex)
         for idx in range(self.n.shape[0]):
+
             r_theta += (
-                self.m[idx]
-                * 1.0j
+                1.0j
+                * self.m[idx]
                 * self.coeff[idx]
                 * special.sph_harm(self.m[idx], self.n[idx], theta, phi)
             )
-            f_nm = (
+            # print(theta.shape)
+            # print(phi.shape)
+            # print(special.sph_harm(self.m[idx], self.n[idx], theta, phi).shape)
+            # quit()
+            f_nm = np.sqrt(
                 ((2.0 * self.n[idx] + 1) * special.factorial(self.n[idx] - self.m[idx]))
                 / (4.0 * np.pi * (special.factorial(self.n[idx] + self.m[idx])))
-            ) ** (0.5)
-
-            pre_coef = f_nm * np.exp(1.0j * self.m[idx] * theta)
-
-            c_nm_1 = 0.5 * (
-                (self.n[idx] + self.m[idx]) * (self.n[idx] - self.m[idx] + 1)
-            ) ** (0.5)
-            c_nm_2 = 0.5 * (
-                (self.n[idx] + self.m[idx]) * (self.n[idx] + self.m[idx] + 1)
-            ) ** (0.5)
-
-            r_phi += pre_coef * (
-                c_nm_1 * special.lpmv(self.m[idx] - 1, self.n[idx], np.cos(phi))
-                - c_nm_2 * special.lpmv(self.m[idx] + 1, self.n[idx], np.cos(phi))
             )
 
-        # S = r * (
-        #     r_theta ** 2.0 + r_phi ** 2.0 * np.sin(phi) ** 2.0 + r ** 2.0 * np.sin(phi)
-        # ) ** (0.5)
+            pre_coef = self.coeff[idx] * f_nm * np.exp(1.0j * self.m[idx] * theta)
 
-        n_x = (
-            r * r_theta * np.sin(theta)
-            - r * r_phi * np.sin(phi) * np.cos(phi) * np.cos(theta)
-            + r ** 2.0 * np.sin(phi) ** 2.0 * np.cos(theta)
+            abs_m = abs(self.m[idx])
+
+            if self.n[idx] == 0 and self.m[idx] == 0:
+                # r_phi += pre_coef * 0.0
+                pass
+            elif self.n[idx] == -self.m[idx]:
+                # pass
+                # print(self.n[idx], self.m[idx])
+
+                # #     # print("got here")
+                Pnm_phi = (
+                    0.5
+                    * np.power(-1, abs_m)
+                    / (2.0 * special.factorial(2.0 * self.n[idx] - 1))
+                    * special.lpmv(self.n[idx] - 1, self.n[idx], np.cos(phi))
+                )
+            elif self.n[idx] == self.m[idx]:
+                # print(self.n[idx], self.m[idx])
+                # print("got here sghadfgsdfg")
+
+                Pnm_phi = self.n[idx] * special.lpmv(
+                    self.n[idx] - 1, self.n[idx], np.cos(phi)
+                )
+            elif self.m[idx] == 0:
+                Pnm_phi = -special.lpmv(1, self.n[idx], np.cos(phi))
+            # elif self.m[idx] == 1:
+            #     Pnm_phi = 0.5 * (
+            #         (self.n[idx] + 1)
+            #         * self.n[idx]
+            #         * special.lpmv(0, self.n[idx], np.cos(phi))
+            #     )
+            else:
+                Pnm_phi = 0.5 * (
+                    (self.n[idx] + self.m[idx])
+                    * (self.n[idx] - self.m[idx] + 1)
+                    * special.lpmv(self.m[idx] - 1, self.n[idx], np.cos(phi))
+                    - special.lpmv(self.m[idx] + 1, self.n[idx], np.cos(phi))
+                )
+
+            phi_has_nan = np.isnan(pre_coef).any()
+            if phi_has_nan:
+                raise ValueError(" output has nans")
+            array_has_nan = np.isnan(Pnm_phi).any()
+            if array_has_nan:
+                raise ValueError(" output has nans")
+            r_phi += pre_coef * Pnm_phi
+
+            # print(f_nm, pre_coef.min(), pre_coef.max())
+            # print(Pnm_phi.min(), Pnm_phi.max())
+        # print(r_theta)
+        # quit()
+
+        print(r_theta.min(), r_theta.max())
+
+        #     r.shape, r_theta.shape, r_phi.shape,
+        # )
+        print(r.min(), r.max())
+        print(r_phi.min(), r_phi.max())
+
+        S = np.absolute(
+            r
+            * (
+                (r_theta ** 2.0)
+                + (r_phi ** 2.0) * (np.sin(phi) ** 2.0)
+                + (r ** 2.0) * np.sin(phi)
+            )
+            ** (0.5)
+        )
+        t_idx = np.where(S < 0.0000001)
+        print(S[t_idx])
+        print(phi[t_idx])
+        print(r[t_idx])
+        print(r_theta[t_idx])
+        print(r_phi[t_idx])
+        quit()
+        array_has_nan = np.isnan(S).any()
+        if array_has_nan:
+            raise ValueError("output has nans")
+
+        n_x = r * (
+            r_theta * np.sin(theta)
+            - r_phi * np.sin(phi) * np.cos(phi) * np.cos(theta)
+            + r * np.square(np.sin(phi)) * np.cos(theta)
         )  # / S
 
-        n_y = (
-            -r * r_theta * np.cos(theta)
-            - r * r_phi * np.sin(phi) * np.cos(phi) * np.sin(theta)
-            + r * r * np.sin(phi) ** 2.0 * np.sin(theta)
+        n_y = r * (
+            -r_theta * np.cos(theta)
+            - r_phi * np.sin(phi) * np.cos(phi) * np.sin(theta)
+            + r * np.square(np.sin(phi)) * np.sin(theta)
         )  # / S
 
-        n_z = r * r_phi * np.sin(phi) ** (2.0) + r * r * np.cos(phi) * np.sin(
-            phi
-        )  # / S
+        # print(n_y)
 
+        n_z = r * (
+            r_phi * np.square(np.sin(phi)) + r * np.cos(phi) * np.sin(phi)
+        )  # / S
+        print(S.min(), S.max())
+        print(n_x.min(), n_x.max())
+        print(n_y.min(), n_y.max())
+        print(n_z.min(), n_z.max())
         coords = np.stack((n_x.real, n_y.real, n_z.real), axis=0)
-
+        # print(coords.max(axis=1), coords.min(axis=1))
+        array_has_nan = np.isnan(coords).any()
+        if array_has_nan:
+            raise ValueError("output has nans")
+        test_norm = np.sqrt(np.sum(np.square(coords), axis=0))
+        zeros = np.where(test_norm == 0.0)
+        # print(zeros)
+        # print(test_norm.max(), test_norm.min())
+        # test_norm = np.linalg.norm(coords, axis=0)
+        # print(test_norm.shape, coords.dtype)
+        # print((coords / test_norm).shape)
+        quit()
         return coords
 
     # scalar
     def f(self, x):
-        sph_coord = self.Cart_to_Spherical_np(x)
+        sph_coord = self.cart_to_spherical_np(x)
         # note the switch to math notation
         radius = self.get_radius(sph_coord[2], sph_coord[1])
         f_res = radius ** 2 - (x[0] ** 2 + x[1] ** 2 + x[2] ** 2)
@@ -465,13 +566,18 @@ class star_object(object):
             x = x.T
         else:
             print("there is a weird issue with the grad operator")
-        sph_coord = self.Cart_to_Spherical_np(x)
 
-        radius = self.get_radius(sph_coord[:, 2], sph_coord[:, 1])
-
-        der_ = self.get_derivatives(radius, sph_coord[:, 2], sph_coord[:, 1])
-
-        return der_
+        conv_coord = self.cart_to_spherical_np(x.T)
+        radius = self.get_radius(conv_coord[2], conv_coord[1])
+        # directional dirivatives on the surface
+        der_ = self.get_derivatives(radius, conv_coord[2], conv_coord[1])
+        # print(der_)
+        # implicit derivative
+        # print(radius.shape, x.T.shape, der_.shape)
+        test = 2.0 * (radius[None, :] * der_ - x.T)
+        # print(test)
+        # quit()
+        return test
 
     def get_file_path(self):
         return self.file_path
@@ -531,43 +637,55 @@ def main():
     sand = star_object()
     sand.set_file_path(fname)
     sand.read_file()
+    # sand.set_coeff_to_norm()
+
+    # print(sand.norm_coeff)
 
     # points, cells = uv_sphere(20)
     points, cells = icosa_sphere(10)
-    conv_pts = convert_nodes(points, sand) / 100.0
+    conv_pts = convert_nodes(points, sand)
     # print(points, cells)
     tri_cells = [("triangle", cells)]
 
-    mesh = meshio.write_points_cells("test.vtk", conv_pts, tri_cells)
-    print("made sand surface")
+    test2 = Sphere()
+    print(points.T.shape)
+    s_pts_2 = test2.f(points.T)
+    s_grad_2 = test2.grad(points.T)
+    print(s_pts_2.shape, s_grad_2.shape)
 
     test = star_object(fname)
     print(points.T.shape)
     s_pts = test.f(points.T)
     s_grad = test.grad(points.T)
     print(s_pts.shape, s_grad.shape)
+
+    mesh = meshio.write_points_cells(
+        "test.vtk", conv_pts, tri_cells, point_data={"normals": s_grad.T}
+    )
+    print("made sand surface")
+    quit()
     # You can use all methods in optimesh:
     # points, cells = optimesh.cpt.fixed_point_uniform(
     # points, cells = optimesh.odt.fixed_point_uniform(
-    points_opt, cells_opt = optimesh.cvt.quasi_newton_uniform_blocks(
-        conv_pts,
-        cells,
-        1.0e-2,
-        10,
-        verbose=True,
-        implicit_surface=Sphere(),  # star_object(fname),
-        # step_filename_format="out{:03d}.vtk"
-    )
-
     # points_opt, cells_opt = optimesh.cvt.quasi_newton_uniform_blocks(
     #     conv_pts,
     #     cells,
     #     1.0e-2,
     #     10,
     #     verbose=True,
-    #     implicit_surface=star_object(fname),
+    #     implicit_surface=Sphere(),  # star_object(fname),
     #     # step_filename_format="out{:03d}.vtk"
     # )
+
+    points_opt, cells_opt = optimesh.cvt.quasi_newton_uniform_blocks(
+        conv_pts,
+        cells,
+        1.0e-2,
+        10,
+        verbose=True,
+        implicit_surface=star_object(fname),
+        # step_filename_format="out{:03d}.vtk"
+    )
 
     tri_cells_opt = [("triangle", cells_opt)]
 
