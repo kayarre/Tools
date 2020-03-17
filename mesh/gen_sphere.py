@@ -737,27 +737,27 @@ def main():
     #     implicit_surface=Sphere(),  # star_object(fname),
     #     # step_filename_format="out{:03d}.vtk"
     # )
-    max_steps = 10
-    q_check = call_back_test(max_num_steps=max_steps)
+    # max_steps = 10
+    # q_check = call_back_test(max_num_steps=max_steps)
 
-    points_opt, cells_opt = optimesh.cvt.quasi_newton_uniform_full(
-        conv_pts,
-        cells,
-        1.0e-2,
-        10,
-        omega=0.9,
-        verbose=True,
-        callback=q_check.test_callback,
-        uniform_density=True,
-        implicit_surface=star_object(fname),
-        implicit_surface_tol=1.0e-8
-        # step_filename_format="out{:03d}.vtk"
-    )
+    # points_opt, cells_opt = optimesh.cvt.quasi_newton_uniform_full(
+    #     conv_pts,
+    #     cells,
+    #     1.0e-2,
+    #     10,
+    #     omega=0.9,
+    #     verbose=True,
+    #     callback=q_check.test_callback,
+    #     uniform_density=True,
+    #     implicit_surface=star_object(fname),
+    #     implicit_surface_tol=1.0e-8
+    #     # step_filename_format="out{:03d}.vtk"
+    # )
 
-    tri_cells_opt = [("triangle", cells_opt)]
+    # tri_cells_opt = [("triangle", cells_opt)]
 
-    mesh = meshio.write_points_cells("test_opt.vtk", points_opt, tri_cells_opt)
-    print("optimized sand surface")
+    # mesh = meshio.write_points_cells("test_opt.vtk", points_opt, tri_cells_opt)
+    # print("optimized sand surface")
 
 
 if __name__ == "__main__":
