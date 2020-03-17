@@ -12,15 +12,17 @@ np.set_printoptions(threshold=sys.maxsize)
 
 def Cart_to_Spherical_np(xyz):
     # physics notation
+    # print(xyz.shape)
+    # quit()
     ptsnew = np.zeros(xyz.shape)  # np.hstack((xyz, np.zeros(xyz.shape)))
     xy = xyz[0] ** 2 + xyz[1] ** 2  # r
     ptsnew[0] = np.sqrt(xy + xyz[2] ** 2)
-    # ptsnew[:, 1] = np.arctan2(  # theta
-    #     np.sqrt(xy), xyz[:, 2]
-    # )  # for elevation angle defined from Z-axis down
     ptsnew[1] = np.arctan2(  # theta
-        xyz[2], np.sqrt(xy)
-    )  # for elevation angle defined from XY-plane up
+        np.sqrt(xy), xyz[2]
+    )  # for elevation angle defined from Z-axis down
+    # ptsnew[1] = np.arctan2(  # theta
+    #     xyz[2], np.sqrt(xy)
+    # )  # for elevation angle defined from XY-plane up
     ptsnew[2] = np.arctan2(xyz[1], xyz[0])  # phi
     return ptsnew
 
@@ -340,6 +342,38 @@ def _sphere_from_triangles(corners, faces, n):
     return vertices, cells
 
 
+def normalize_v3(arr):
+    """ Normalize a numpy array of 3 component vectors shape=(n,3) """
+    # assumes nx3 arrays
+    lens = np.sqrt(arr[:, 0] ** 2 + arr[:, 1] ** 2 + arr[:, 2] ** 2)
+    arr[:, 0] /= lens
+    arr[:, 1] /= lens
+    arr[:, 2] /= lens
+    return arr
+
+
+def estimate_surface_normals(vertices, faces):
+
+    # Create a zeroed array with the same type and shape as our vertices i.e., per vertex normal
+    norm = np.zeros(vertices.shape, dtype=vertices.dtype)
+    # Create an indexed view into the vertex array using the array of three indices for triangles
+    tris = vertices[faces]
+    # Calculate the normal for all the triangles, by taking the cross product of the vectors v1-v0, and v2-v0 in each triangle
+    n = np.cross(tris[::, 1] - tris[::, 0], tris[::, 2] - tris[::, 0])
+    # n is now an array of normals per triangle. The length of each normal is dependent the vertices,
+    # we need to normalize these, so that our next step weights each normal equally.
+    normalize_v3(n)
+    # now we have a normalized array of normals, one per triangle, i.e., per triangle normals.
+    # But instead of one per triangle (i.e., flat shading), we add to each vertex in that triangle,
+    # the triangles' normal. Multiple triangles would then contribute to every vertex, so we need to normalize again afterwards.
+    # The cool part, we can actually add the normals through an indexed view of our (zeroed) per vertex normal array
+    norm[faces[:, 0]] += n
+    norm[faces[:, 1]] += n
+    norm[faces[:, 2]] += n
+    norm_final = normalize_v3(norm)
+    return norm_final
+
+
 class star_object(object):
     def __init__(self, file_path=None):  # , res=10):
         # res = 4 if res < 4 else res  # ternary
@@ -377,7 +411,7 @@ class star_object(object):
         # print(coeff[0])
         self.set_norm_coeff()
         # normalizing the coefficients
-        self.set_coeff_to_norm()
+        # self.set_coeff_to_norm()
 
     def set_norm_coeff(self):
         self.norm_coeff = self.coeff / self.coeff[0]
@@ -488,12 +522,12 @@ class star_object(object):
         # print(r_theta)
         # quit()
 
-        print(r_theta.min(), r_theta.max())
+        # print(r_theta.min(), r_theta.max())
 
         #     r.shape, r_theta.shape, r_phi.shape,
         # )
-        print(r.min(), r.max())
-        print(r_phi.min(), r_phi.max())
+        # print(r.min(), r.max())
+        # print(r_phi.min(), r_phi.max())
 
         S = np.absolute(
             r
@@ -510,7 +544,7 @@ class star_object(object):
         # print(r[t_idx])
         # print(r_theta[t_idx])
         # print(r_phi[t_idx])
-        #quit()
+        # quit()
         array_has_nan = np.isnan(S).any()
         if array_has_nan:
             raise ValueError("output has nans")
@@ -532,27 +566,37 @@ class star_object(object):
         n_z = r * (
             r_phi * np.square(np.sin(phi)) + r * np.cos(phi) * np.sin(phi)
         )  # / S
-        print(S.min(), S.max())
-        print(n_x.min(), n_x.max())
-        print(n_y.min(), n_y.max())
-        print(n_z.min(), n_z.max())
+        # print(S.min(), S.max())
+        # print(n_x.min(), n_x.max())
+        # print(n_y.min(), n_y.max())
+        # print(n_z.min(), n_z.max())
         coords = np.stack((n_x.real, n_y.real, n_z.real), axis=0)
         # print(coords.max(axis=1), coords.min(axis=1))
         array_has_nan = np.isnan(coords).any()
         if array_has_nan:
             raise ValueError("output has nans")
         test_norm = np.sqrt(np.sum(np.square(coords), axis=0))
-        zeros = np.where(test_norm < 0.000000001)
-        print(zeros)
-        print(coords.shape)
-        print(coords[:, zeros].shape)
+        south_pole = np.where(phi == np.pi)
+        north_pole = np.where(phi == 0.0)
+        # test_norm[north_pole] =
+        # print(coords[:, south_pole[0]].shape)
+        coords[:, south_pole[0]] = np.array([[0.0], [0.0], [-1.0]])
+        coords[:, north_pole[0]] = np.array([[0.0], [0.0], [1.0]])
+        test_norm[south_pole] = 1.0
+        test_norm[north_pole] = 1.0
 
-        # print(test_norm.max(), test_norm.min())
-        # test_norm = np.linalg.norm(coords, axis=0)
-        # print(test_norm.shape, coords.dtype)
-        # print((coords / test_norm).shape)
-        quit()
-        return coords
+        # quit()
+        # zeros = np.where(test_norm < 0.000000001)
+        # print(zeros)
+        # print(coords.shape)
+        # print(coords[:, zeros].shape)
+
+        # # print(test_norm.max(), test_norm.min())
+        # # test_norm = np.linalg.norm(coords, axis=0)
+        # # print(test_norm.shape, coords.dtype)
+        # # print((coords / test_norm).shape)
+        # quit()
+        return coords  # / test_norm
 
     # scalar
     def f(self, x):
@@ -605,14 +649,13 @@ def setup_pooch():
 
 
 def convert_nodes(nodes, star_data):
-    sph = Cart_to_Spherical_np(nodes)
-
-    r = np.zeros(sph[:, 0].shape, dtype=complex)
+    sph = Cart_to_Spherical_np(nodes.T)
+    r = np.zeros(sph.shape[-1], dtype=np.complex)
+    # print(sph[2].shape, sph[1].shape)
     for idx in range(star_data.n.shape[0]):
-
         # shift phi to be 0 <= phi <= pi
         r += star_data.coeff[idx] * special.sph_harm(
-            star_data.m[idx], star_data.n[idx], sph[:, 2], sph[:, 1] + np.pi / 2.0
+            star_data.m[idx], star_data.n[idx], sph[2], sph[1]  # + np.pi / 2.0
         )
     r_real = r.real
     # print(np.abs(r), r.real)
@@ -632,6 +675,16 @@ class Sphere:
         return -2 * x
 
 
+class call_back_test(object):
+    def __init__(self, max_num_steps):
+        self.avg_quality = np.empty((max_num_steps + 1))
+
+    def test_callback(self, k, mesh):
+        self.avg_quality[k] = np.average(mesh.cell_quality)
+        print(k)
+        return
+
+
 def main():
 
     pooch_particles = setup_pooch()
@@ -645,8 +698,13 @@ def main():
     # print(sand.norm_coeff)
 
     # points, cells = uv_sphere(20)
-    points, cells = icosa_sphere(10)
+    points, cells = icosa_sphere(20)
     conv_pts = convert_nodes(points, sand)
+    # print(points, conv_pts.shape)
+    # quit()
+    estimate_normals = estimate_surface_normals(conv_pts, cells)
+    # print(conv_pts.shape, estinmate_normals.shape)
+    # quit()
     # print(points, cells)
     tri_cells = [("triangle", cells)]
 
@@ -663,10 +721,10 @@ def main():
     print(s_pts.shape, s_grad.shape)
 
     mesh = meshio.write_points_cells(
-        "test.vtk", conv_pts, tri_cells, point_data={"normals": s_grad.T}
+        "test.vtk", conv_pts, tri_cells, point_data={"Normals": estimate_normals}
     )
     print("made sand surface")
-    quit()
+
     # You can use all methods in optimesh:
     # points, cells = optimesh.cpt.fixed_point_uniform(
     # points, cells = optimesh.odt.fixed_point_uniform(
@@ -679,14 +737,20 @@ def main():
     #     implicit_surface=Sphere(),  # star_object(fname),
     #     # step_filename_format="out{:03d}.vtk"
     # )
+    max_steps = 10
+    q_check = call_back_test(max_num_steps=max_steps)
 
-    points_opt, cells_opt = optimesh.cvt.quasi_newton_uniform_blocks(
+    points_opt, cells_opt = optimesh.cvt.quasi_newton_uniform_full(
         conv_pts,
         cells,
         1.0e-2,
         10,
+        omega=0.9,
         verbose=True,
+        callback=q_check.test_callback,
+        uniform_density=True,
         implicit_surface=star_object(fname),
+        implicit_surface_tol=1.0e-8
         # step_filename_format="out{:03d}.vtk"
     )
 
