@@ -7,7 +7,7 @@ import argparse
 import itertools
 import os
 import sys
-    
+
 
 def Execute(args):
     print("clip centerlines")
@@ -32,21 +32,35 @@ def Execute(args):
     centerlines.BuildCells()
     
     attribute = vtk.vtkDoubleArray()
-    attribute.SetName(scalar_name)
+    attribute.SetName("CenterlineSectionAreaAvg")
     attribute.SetNumberOfComponents(1)
-    attribute.SetNumberOfTuples(pd.GetNumberOfCells())
+    attribute.SetNumberOfTuples(centerlines.GetNumberOfCells())
+
+    attribute2 = vtk.vtkDoubleArray()
+    attribute2.SetName("MaximumInscribedSphereRadiusAvgArea")
+    attribute2.SetNumberOfComponents(1)
+    attribute2.SetNumberOfTuples(centerlines.GetNumberOfCells())
 
     for i in range(centerlines.GetNumberOfCells()):
         cell = centerlines.GetCell(i)
         cell_avg = 0.0
+        cell_avg2 = 0.0
         cell_n_pts = cell.GetNumberOfPoints()
         for j in range(cell_n_pts):
             pt_id = cell.GetPointIds().GetId(j)
-            area = centerlines.GetPointData().GetArray("CenterlineSectionArea").GetTuple(pt_id)
-            cell_avg + = area[0]
-        attribute.SetTuple(i, list(cell_avg/cell_n_pts)) 
+            area = centerlines.GetPointData().GetArray("CenterlineSectionArea").GetTuple(pt_id)[0]
+            cell_avg += area
+            rad = centerlines.GetPointData().GetArray("MaximumInscribedSphereRadius").GetTuple(pt_id)[0]
+            cell_avg2 += np.pi*rad**2.0
+            #print(area)
+        avg = cell_avg / float(cell_n_pts)
+        attribute.SetTuple(i, (avg,))
+        avg2 = cell_avg2 / float(cell_n_pts)
+        attribute2.SetTuple(i, (avg2,))
+
 
     centerlines.GetCellData().AddArray(attribute)
+    centerlines.GetCellData().AddArray(attribute2)
 
     writer = vmtkscripts.vmtkSurfaceWriter()
     writer.OutputFileName = args.out_file
@@ -72,8 +86,3 @@ if __name__=='__main__':
     args = parser.parse_args()
     #print(args)
     Execute(args)
-
-
-
-
-

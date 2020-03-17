@@ -2,3 +2,20 @@
 __pycache__/
 *.py[cod]
 *$py.class
+
+.ipynb_checkpoints/
+
+*.stl
+
+*.txt
+
+*.nrrd
+
+# Compiled python modules.
+*.pyc
+
+# Setuptools distribution folder.
+/dist/
+
+# Python egg metadata, regenerated from source files by setuptools.
+/*.egg-info
