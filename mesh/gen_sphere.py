@@ -698,7 +698,7 @@ def main():
     # print(sand.norm_coeff)
 
     # points, cells = uv_sphere(20)
-    points, cells = icosa_sphere(20)
+    points, cells = icosa_sphere(60)
     conv_pts = convert_nodes(points, sand)
     # print(points, conv_pts.shape)
     # quit()
@@ -708,17 +708,17 @@ def main():
     # print(points, cells)
     tri_cells = [("triangle", cells)]
 
-    test2 = Sphere()
-    print(points.T.shape)
-    s_pts_2 = test2.f(points.T)
-    s_grad_2 = test2.grad(points.T)
-    print(s_pts_2.shape, s_grad_2.shape)
+    # test2 = Sphere()
+    # print(points.T.shape)
+    # s_pts_2 = test2.f(points.T)
+    # s_grad_2 = test2.grad(points.T)
+    # print(s_pts_2.shape, s_grad_2.shape)
 
-    test = star_object(fname)
-    print(points.T.shape)
-    s_pts = test.f(points.T)
-    s_grad = test.grad(points.T)
-    print(s_pts.shape, s_grad.shape)
+    # test = star_object(fname)
+    # print(points.T.shape)
+    # s_pts = test.f(points.T)
+    # s_grad = test.grad(points.T)
+    # print(s_pts.shape, s_grad.shape)
 
     mesh = meshio.write_points_cells(
         "test.vtk", conv_pts, tri_cells, point_data={"Normals": estimate_normals}
