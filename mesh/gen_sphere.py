@@ -6,6 +6,8 @@ import pooch
 import os
 import optimesh
 import sys
+import pyacvd
+import pyvista as pv
 
 np.set_printoptions(threshold=sys.maxsize)
 
@@ -648,8 +650,9 @@ def setup_pooch():
     return GOODBOY
 
 
-def convert_nodes(nodes, star_data):
-    sph = Cart_to_Spherical_np(nodes.T)
+def convert_nodes(nodes, star_data, sph=None):
+    if sph == None:
+        sph = Cart_to_Spherical_np(nodes.T)
     r = np.zeros(sph.shape[-1], dtype=np.complex)
     # print(sph[2].shape, sph[1].shape)
     for idx in range(star_data.n.shape[0]):
@@ -685,8 +688,132 @@ class call_back_test(object):
         return
 
 
-def main():
+class particle_generator(object):
+    def __init__(self, sphere_size=60):
+        self.sphere_size = sphere_size
+        self.pooch_obj = None
+        self.points = None
+        self.cells = None
+        self.plot = False
+        self.remesh = None
 
+    # def set_pooch_obj(self, pooch_obj):
+    #     self.pooch_obj = pooch_obj
+
+    def get_pooch_obj(self):
+        return self.pooch_obj
+
+    def set_base_mesh(self, sz=None):
+        if sz == None:
+            sz = self.sphere_size
+
+        points, cells = icosa_sphere(sz)
+
+        self.points = points
+        self.get_spherical_coord()
+
+        self.cells = cells
+        self.set_faces()
+        print("base mesh set")
+
+    def get_spherical_coord(self):
+        # assumes one set of base points
+        self.sph = Cart_to_Spherical_np(self.points.T)
+
+    def set_base_points(self, xyz):
+        # if the base points need to change
+        self.points = xyz
+        self.get_spherical_coord()
+
+    def set_base_triangles(self, tris):
+        # if the base triangles need to change
+        self.cells = tris
+        self.set_faces()
+
+    def read_file(self, file_path=None):
+        if file_path != None:
+            self.file_path = file_path
+        with open(self.file_path, mode="r") as f:
+            data = pd.read_csv(f, sep="\s+", names=["n", "m", "a", "aj"])
+        self.n = data["n"].to_numpy()
+        self.m = data["m"].to_numpy()
+        self.coeff = np.empty((self.n.shape[0]), dtype=complex)
+        self.coeff.real = data["a"].to_numpy()
+        self.coeff.imag = data["aj"].to_numpy()
+
+    def convert_points(self):
+        r = np.zeros(self.sph.shape[-1], dtype=np.complex)
+        for idx in range(self.n.shape[0]):
+            r += self.coeff[idx] * special.sph_harm(
+                self.m[idx], self.n[idx], self.sph[2], self.sph[1]
+            )
+        r_real = r.real
+        nodes = self.points * r_real[:, None]
+
+        return nodes
+
+    def set_faces(self):
+        # assumes all triangles
+        # tris = 3 * np.ones(conv_pts.shape[0])
+        # faces = np.insert(self.cells, 0, 3, axis=1)
+        self.faces = np.insert(self.cells, 0, 3, axis=1)
+        self.flat_faces = self.faces.flatten()
+
+    def generate_particle(self, particle_path):
+        fname = self.pooch_obj.fetch(particle_path)
+        print(fname)
+        self.read_file(fname)
+        conv_pts = self.convert_points()
+
+        surf = pv.PolyData(conv_pts, self.flat_faces)
+
+        # plot each face with a different color
+        # surf.plot()  # scalars=np.arange(3), cpos=[-1, 1, 0.5])
+        clus = pyacvd.Clustering(surf)
+        # mesh is not dense enough for uniform remeshing
+        clus.subdivide(3)
+        clus.cluster(20000)
+
+        # plot clustered cow mesh
+        if self.plot:
+            clus.plot()
+
+        remesh = clus.create_mesh()
+
+        # plot uniformly remeshed particle
+        # remesh.save("test_acvd.vtp")
+        if self.plot:
+            remesh.plot(color="w", show_edges=True)
+
+        self.remesh = remesh
+
+    def write_particle(self, out_path):
+        self.remesh.save(out_path)
+
+    def clean_mesh(self):
+        self.remesh = None
+
+    def setup_pooch(
+        self,
+        cache="particles",
+        base_url="ftp://ftp.nist.gov/pub/bfrl/garbocz/Particle-shape-database/",
+        registry="registry.txt",
+    ):
+        # Define the Pooch exactly the same (urls is None by default)
+        GOODBOY = pooch.create(
+            path=pooch.os_cache(cache),
+            base_url=base_url,
+            version="0.0.1",
+            version_dev="master",
+            registry=None,
+        )
+        # If custom URLs are present in the registry file, they will be set automatically
+        GOODBOY.load_registry(os.path.join(os.path.dirname(__file__), registry))
+
+        self.pooch_obj = GOODBOY
+
+
+def generate_particle():
     pooch_particles = setup_pooch()
     fname = pooch_particles.fetch("C109-sand/C109-20002.anm")
     print(fname)
@@ -699,8 +826,9 @@ def main():
 
     # points, cells = uv_sphere(20)
     points, cells = icosa_sphere(60)
+    # print(points.shape, cells.shape)
     conv_pts = convert_nodes(points, sand)
-    # print(points, conv_pts.shape)
+    # print(points.shape, conv_pts.shape)
     # quit()
     estimate_normals = estimate_surface_normals(conv_pts, cells)
     # print(conv_pts.shape, estinmate_normals.shape)
@@ -758,6 +886,40 @@ def main():
 
     # mesh = meshio.write_points_cells("test_opt.vtk", points_opt, tri_cells_opt)
     # print("optimized sand surface")
+
+    # mesh points
+    # vertices = np.array([[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0], [0.5, 0.5, -1]])
+
+    # mesh faces
+    # faces = np.hstack(
+    #     [[4, 0, 1, 2, 3], [3, 0, 1, 4], [3, 1, 2, 4]]  # square  # triangle
+    # )  # triangle
+
+    tris = 3 * np.ones(conv_pts.shape[0])
+    faces = np.insert(cells, 0, 3, axis=1)
+    flat_faces = faces.flatten()
+    surf = pv.PolyData(conv_pts, flat_faces)
+
+    # plot each face with a different color
+    # surf.plot()  # scalars=np.arange(3), cpos=[-1, 1, 0.5])
+
+    clus = pyacvd.Clustering(surf)
+    # mesh is not dense enough for uniform remeshing
+    clus.subdivide(3)
+    clus.cluster(20000)
+
+    # plot clustered cow mesh
+    # clus.plot()
+
+    remesh = clus.create_mesh()
+
+    # plot uniformly remeshed particle
+    remesh.save("test_acvd.vtp")
+    remesh.plot(color="w", show_edges=True)
+
+
+def main():
+    generate_particle()
 
 
 if __name__ == "__main__":
