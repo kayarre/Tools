@@ -78,8 +78,6 @@ def get_bounding_ball(S, epsilon=1e-7):
         return numpy.sum((p - c) ** 2) <= r2
 
     def get_boundary(R):
-        print(R)
-        quit()
         if len(R) == 0:
             return numpy.zeros(S.shape[1]), 0.0
 
