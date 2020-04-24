@@ -84,7 +84,7 @@ double w_vel(double alpha, int nfour, double *vel_r, double *vel_i, double r, do
   zi = Complex(0.0,1.0);
   z1 = Complex(1.0,0.0);
   w = vel_r[0]*(1-r*r); /* Poiseulle Flow Component */
-    for (k=1;k<nfour;k++){
+  for (k=1;k<nfour;k++){
     kt = 2*PI*k*t/T;
     za = RCmul(alpha*sqrt(k)/sqrt(2),Complex(-1.0,1.0));
     zar = RCmul(r,za);
@@ -94,7 +94,7 @@ double w_vel(double alpha, int nfour, double *vel_r, double *vel_i, double r, do
     zq = Cmul(Complex(vel_r[k], vel_i[k]),Complex(cos(kt), sin(kt)));
     zvel = Cmul(zq,Csub(z1,zJ0rJ0));
     w = w+zvel.r;
-    }
+  }
 
-    return w;
+  return w;
 }
